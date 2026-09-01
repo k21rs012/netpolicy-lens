@@ -44,9 +44,12 @@ def test_firewall_policy_flows_into_matrix():
     forti, _ = ParserRegistry.parse(SAMPLES["fortigate01.conf"], "fortigate01.conf")
     cells = build_matrix([forti])
     cell = next(c for c in cells if c.source.endswith("zone-wan") and c.destination.endswith("zone-dmz"))
-    assert cell.result == "ALLOW"
+    # The policy targets one /32 inside the DMZ /24, so the whole Segment is
+    # only partially allowed even though HTTPS is explicitly permitted.
+    assert cell.result == "PARTIAL"
     assert cell.allowed == ["TCP/443"]
     assert cell.traces[0]["policy"] == "Internet-to-Web"
+    assert cell.traces[0]["coverage"] == "PARTIAL"
 
 
 def test_unrelated_device_any_does_not_leak():
