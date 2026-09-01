@@ -50,6 +50,7 @@ class CiscoBaseParser(BaseConfigParser):
         nat_rules: list[NATRule] = []
         policies: list[Policy] = []
         warnings: list[ParserWarning] = []
+        unsupported: list[ParserWarning] = []
         current_if: Interface | None = None
         current_vlan: VLAN | None = None
         current_acl: str | None = None
@@ -90,11 +91,12 @@ class CiscoBaseParser(BaseConfigParser):
             if current_acl and re.match(r"(?:\d+\s+)?(?:permit|deny)\s+", line):
                 parsed = self._parse_acl_rule(device.id, current_acl, line, number, acl_seq)
                 if parsed: policies.append(parsed); acl_seq = parsed.sequence
-                else: warnings.append(ParserWarning(device=device.id, line=number, config=line, reason="unsupported ACL statement", parser=self.parser_id))
+                else: unsupported.append(ParserWarning(device=device.id, line=number, config=line, reason="unsupported ACL statement", parser=self.parser_id))
                 continue
             if match := re.match(r"access-list\s+(\S+)\s+(.+)", line):
                 parsed = self._parse_acl_rule(device.id, match.group(1), match.group(2), number, len(policies))
                 if parsed: policies.append(parsed)
+                else: unsupported.append(ParserWarning(device=device.id, line=number, config=line, reason="unsupported ACL statement", parser=self.parser_id))
                 continue
             if match := re.match(r"ip route\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?", line):
                 try: dest = str(ipaddress.ip_network(f"{match.group(1)}/{match.group(2)}", strict=False))
@@ -113,6 +115,10 @@ class CiscoBaseParser(BaseConfigParser):
             if match := re.match(r"ip nat inside source (?:list|route-map) (\S+) interface (\S+) overload", line):
                 nat_rules.append(NATRule(device=device.id, name=f"overload-{match.group(1)}", type="source",
                     original_src=match.group(1), translated_src=f"interface:{match.group(2)}", trace=self.trace(number, raw)))
+                continue
+            if line.startswith(("ip nat ", "ipv6 access-list ", "access-list ")):
+                unsupported.append(ParserWarning(device=device.id, line=number, config=line,
+                    reason="unsupported security statement", parser=self.parser_id))
 
         segments: list[Segment] = []
         for vlan in vlans:
@@ -135,7 +141,7 @@ class CiscoBaseParser(BaseConfigParser):
                 policy.interface, policy.direction, seg = bindings[policy.name]
                 if seg: policy.src_segments = [seg] if policy.direction == "in" else policy.src_segments
         return CanonicalConfig(device=device, interfaces=interfaces, vlans=vlans, segments=segments,
-            routes=routes, policies=policies, nat=nat_rules, warnings=warnings)
+            routes=routes, policies=policies, nat=nat_rules, warnings=warnings, unsupported=unsupported)
 
     def _parse_acl_rule(self, device: str, acl: str, line: str, number: int, previous: int) -> Policy | None:
         tokens = line.split(); pos = 0

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from ..models import CanonicalConfig, Device, Interface, NATRule, ParserCapabilities, Policy, Route, Segment, VLAN
+from ..models import CanonicalConfig, Device, Interface, NATRule, ParserCapabilities, ParserWarning, Policy, Route, Segment, VLAN
 from .base import BaseConfigParser
 from .common import hostname_from, interface_networks, slug
 from .registry import ParserRegistry
@@ -27,6 +27,7 @@ class YamahaRTXParser(BaseConfigParser):
         device = Device(id=device_id, hostname=hostname, vendor="yamaha", network_os="rtx", source_file=self.source_file)
         ifaces: dict[str, Interface] = {}; vlans: list[VLAN] = []; policies: list[Policy] = []; routes: list[Route] = []; bindings: list[tuple[str, str, list[str]]] = []
         vlan_ifaces: dict[int, str] = {}; nat_types: dict[str, str] = {}; nat_bindings: dict[str, str] = {}; nat_static: list[tuple[int, re.Match[str]]] = []
+        unsupported: list[ParserWarning] = []
         for n, raw in enumerate(self.lines, 1):
             line = raw.strip()
             if match := re.match(r"ip (\S+) address (\S+)", line):
@@ -46,6 +47,9 @@ class YamahaRTXParser(BaseConfigParser):
             elif match := re.match(r"nat descriptor type (\S+) (\S+)", line): nat_types[match.group(1)] = match.group(2)
             elif match := re.match(r"ip (\S+) nat descriptor (\S+)", line): nat_bindings[match.group(2)] = match.group(1)
             elif match := re.match(r"nat descriptor masquerade static (\S+) (\S+) (\S+) (tcp|udp) (\d+)(?:-(\d+))?", line): nat_static.append((n, match))
+            elif line.startswith(("ip filter ", "ipv6 filter ", "nat descriptor ")):
+                unsupported.append(ParserWarning(device=device_id, line=n, config=line,
+                    reason="unsupported security statement", parser=self.parser_id))
         segments: list[Segment] = []
         for iface in ifaces.values():
             vlan = next((item for item in vlans if vlan_ifaces.get(item.id) == iface.name), None)
@@ -73,4 +77,4 @@ class YamahaRTXParser(BaseConfigParser):
                 translated_dst=match.group(3), protocol=match.group(4), original_port=port,
                 translated_port=port, trace=self.trace(number, self.lines[number - 1])))
         return CanonicalConfig(device=device, interfaces=list(ifaces.values()), vlans=vlans, segments=segments,
-            routes=routes, policies=policies, nat=nat_rules)
+            routes=routes, policies=policies, nat=nat_rules, unsupported=unsupported)

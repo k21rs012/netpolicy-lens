@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections import defaultdict
 
@@ -77,6 +78,7 @@ class PANOSParser(BaseConfigParser):
         nat_lines: dict[str, list[tuple[int, str]]] = defaultdict(list)
         routes: list[Route] = []
         warnings: list[ParserWarning] = []
+        unsupported: list[ParserWarning] = []
 
         for number, raw in enumerate(self.lines, 1):
             line = raw.strip()
@@ -117,7 +119,7 @@ class PANOSParser(BaseConfigParser):
                     if "nexthop" in line: route.next_hop = match.group(3)
                     else: route.interface = match.group(3)
             elif line.startswith("set ") and not line.startswith("set deviceconfig system hostname "):
-                warnings.append(ParserWarning(device=device_id, line=number, config=line,
+                unsupported.append(ParserWarning(device=device_id, line=number, config=line,
                     reason="unsupported statement", parser=self.parser_id))
 
         zones: list[Zone] = []
@@ -163,6 +165,29 @@ class PANOSParser(BaseConfigParser):
 
         segment_by_name = {z.name: z.segment_id for z in zones}
         policies: list[Policy] = []
+
+        def unknown_addresses(names: list[str], seen: set[str] | None = None) -> set[str]:
+            seen = seen or set(); result: set[str] = set()
+            for name in names:
+                if name in seen or name in address_values: continue
+                if name in address_groups:
+                    result.update(unknown_addresses(address_groups[name], seen | {name})); continue
+                try:
+                    ipaddress.ip_network(name, strict=False)
+                except ValueError:
+                    result.add(name)
+            return result
+
+        def unknown_services(names: list[str], seen: set[str] | None = None) -> set[str]:
+            seen = seen or set(); result: set[str] = set()
+            for name in names:
+                if name in seen or name in service_values or name == "application-default": continue
+                if name in service_groups:
+                    result.update(unknown_services(service_groups[name], seen | {name}))
+                else:
+                    result.add(name)
+            return result
+
         for sequence, (name, data) in enumerate(policy_data.items(), 1):
             if (data.get("disabled") or ["no"])[0] == "yes":
                 continue
@@ -178,6 +203,12 @@ class PANOSParser(BaseConfigParser):
                 protocol=protocols, dst_ports=ports, action=canonical_action, direction="zone",
                 from_zone=", ".join(data.get("from", [])) or None, to_zone=", ".join(data.get("to", [])) or None,
                 trace=self.trace(line_no, raw, line_end)))
+            unresolved = unknown_addresses([*data.get("source", []), *data.get("destination", [])])
+            unresolved.update(x for x in [*data.get("from", []), *data.get("to", [])] if x not in segment_by_name)
+            unresolved.update(unknown_services(data.get("service", [])))
+            for reference in sorted(unresolved):
+                warnings.append(ParserWarning(device=device_id, line=line_no, config=raw,
+                    reason=f"unresolved policy reference: {reference}", parser=self.parser_id))
 
         nat_rules: list[NATRule] = []
         for name, data in nat_data.items():
@@ -197,4 +228,4 @@ class PANOSParser(BaseConfigParser):
                 trace=self.trace(line_no, raw, line_end)))
         return CanonicalConfig(device=device, interfaces=list(interfaces.values()), vlans=vlans, segments=segments, zones=zones,
             routes=routes, policies=policies, nat=nat_rules, address_objects=address_objects,
-            service_objects=service_objects, warnings=warnings)
+            service_objects=service_objects, warnings=warnings, unsupported=unsupported)

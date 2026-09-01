@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections import defaultdict
 
-from ..models import AddressObject, CanonicalConfig, Device, Interface, NATRule, ParserCapabilities, Policy, Route, Segment, ServiceObject, Trace, VLAN, Zone
+from ..models import AddressObject, CanonicalConfig, Device, Interface, NATRule, ParserCapabilities, ParserWarning, Policy, Route, Segment, ServiceObject, Trace, VLAN, Zone
 from .base import BaseConfigParser
 from .common import hostname_from, interface_networks, slug
 from .junos_hier import hierarchical_to_set, is_hierarchical_junos
@@ -54,9 +55,11 @@ class JunosBaseParser(BaseConfigParser):
         device = Device(id=device_id, hostname=hostname, vendor="juniper", network_os=self.network_os, source_file=self.source_file)
         ifaces: dict[str, Interface] = {}; zones: dict[str, Zone] = {}; addresses: list[AddressObject] = []; routes: list[Route] = []
         custom_apps: dict[str, dict[str, str]] = defaultdict(dict); app_sets: dict[str, list[str]] = defaultdict(list)
+        address_sets: dict[str, list[str]] = defaultdict(list)
         vlan_data: dict[str, dict[str, str]] = defaultdict(dict); nat_pools: dict[tuple[str, str], dict[str, str]] = defaultdict(dict)
         nat_data: dict[tuple[str, str, str], dict[str, str | int]] = defaultdict(dict)
         policy_data: dict[tuple[str, str, str], dict] = defaultdict(lambda: {"src": [], "dst": [], "apps": [], "action": "unknown", "line": 0, "raw": ""})
+        unsupported: list[ParserWarning] = []
         for n, raw in enumerate(self.lines, 1):
             line = raw.strip()
             if match := re.match(r"set interfaces (\S+) unit (\S+) family (inet6?|ethernet-switching) address (\S+)", line):
@@ -70,6 +73,8 @@ class JunosBaseParser(BaseConfigParser):
                 addresses.append(AddressObject(device=device_id, name=match.group(2), values=[match.group(3)]))
             elif match := re.match(r"set security address-book \S+ address (\S+) (\S+)", line):
                 addresses.append(AddressObject(device=device_id, name=match.group(1), values=[match.group(2)]))
+            elif match := re.match(r"set security address-book \S+ address-set (\S+) address (\S+)", line):
+                address_sets[match.group(1)].append(match.group(2))
             elif match := re.match(r"set applications application (\S+) (protocol|destination-port) (\S+)", line):
                 custom_apps[match.group(1)][match.group(2)] = match.group(3)
             elif match := re.match(r"set applications application-set (\S+) application (\S+)", line):
@@ -96,6 +101,9 @@ class JunosBaseParser(BaseConfigParser):
                 routes.append(Route(device=device_id, destination=match.group(1), next_hop=match.group(2), trace=self.trace(n, raw)))
             elif match := re.match(r"set routing-instances \S+ routing-options static route (\S+) (?:next-hop|qualified-next-hop) (\S+)", line):
                 routes.append(Route(device=device_id, destination=match.group(1), next_hop=match.group(2), trace=self.trace(n, raw)))
+            elif line.startswith(("set security policies ", "set security nat ", "set security zones ")):
+                unsupported.append(ParserWarning(device=device_id, line=self.trace(n, raw).line_start,
+                    config=line, reason="unsupported security statement", parser=self.parser_id))
         vlans: list[VLAN] = []
         for name, data in vlan_data.items():
             if "id" not in data: continue
@@ -118,6 +126,28 @@ class JunosBaseParser(BaseConfigParser):
                 segments.append(Segment(id=iface.segment_id, name=vlan.name, type="vlan", device=device_id,
                     vlan_id=vlan.id, networks=vlan.subnets))
         policies: list[Policy] = []
+        warnings: list[ParserWarning] = []
+        address_values = {item.name: item.values for item in addresses}
+
+        def resolve_address_set(name: str, seen: set[str] | None = None) -> list[str]:
+            seen = seen or set()
+            if name in seen: return []
+            if name in address_values: return address_values[name]
+            return [value for member in address_sets.get(name, [])
+                    for value in resolve_address_set(member, seen | {name})]
+
+        addresses.extend(AddressObject(device=device_id, name=name, values=resolve_address_set(name))
+            for name in address_sets)
+        address_names = {item.name for item in addresses}
+
+        def known_address(name: str) -> bool:
+            if name.lower() in ("any", "any-ipv4", "any-ipv6") or name in address_names:
+                return True
+            try:
+                ipaddress.ip_network(name, strict=False)
+                return True
+            except ValueError:
+                return False
         def resolve_app(name: str, seen: set[str] | None = None) -> list[tuple[str, str]]:
             if name in APPS: return [APPS[name]]
             if name.lower() == "any": return [("any", "any")]
@@ -136,6 +166,14 @@ class JunosBaseParser(BaseConfigParser):
                 src=data["src"] or ["any"], dst=data["dst"] or ["any"], src_segments=[zones[from_zone].segment_id] if from_zone in zones else [],
                 dst_segments=[zones[to_zone].segment_id] if to_zone in zones else [], protocol=list(dict.fromkeys(protocols)), dst_ports=list(dict.fromkeys(ports)),
                 action=data["action"], direction="zone", from_zone=from_zone, to_zone=to_zone, trace=self.trace(data["line"], data["raw"])))
+            for reference in [*data["src"], *data["dst"]]:
+                if not known_address(reference):
+                    warnings.append(ParserWarning(device=device_id, line=self.trace(data["line"], data["raw"]).line_start,
+                        config=data["raw"].strip(), reason=f"unresolved address reference: {reference}", parser=self.parser_id))
+            for zone_name in (from_zone, to_zone):
+                if zone_name not in zones and zone_name != "junos-host":
+                    warnings.append(ParserWarning(device=device_id, line=self.trace(data["line"], data["raw"]).line_start,
+                        config=data["raw"].strip(), reason=f"unresolved zone reference: {zone_name}", parser=self.parser_id))
         services = [ServiceObject(device=device_id, name=k, protocol=v[0], ports=[v[1]]) for k, v in APPS.items()]
         services.extend(ServiceObject(device=device_id, name=name, protocol=data.get("protocol", "any"), ports=[data.get("destination-port", "any")]) for name, data in custom_apps.items())
         nat_rules: list[NATRule] = []
@@ -161,7 +199,7 @@ class JunosBaseParser(BaseConfigParser):
                 trace=self.trace(int(data.get("line", 0)), str(data.get("raw", ""))) if data.get("line") else None))
         return CanonicalConfig(device=device, interfaces=list(ifaces.values()), vlans=vlans, segments=segments,
             zones=list(zones.values()), routes=routes, policies=policies, nat=nat_rules,
-            address_objects=addresses, service_objects=services)
+            address_objects=addresses, service_objects=services, warnings=warnings, unsupported=unsupported)
 
 
 @ParserRegistry.register

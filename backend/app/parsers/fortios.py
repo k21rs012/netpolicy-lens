@@ -97,13 +97,14 @@ class FortiOSParser(BaseConfigParser):
                           block.line_end or block.line_start)
 
     def parse(self) -> CanonicalConfig:
-        blocks, warnings = self._blocks()
+        blocks, unsupported = self._blocks()
         global_block = next((b for b in blocks if b.section == "system global" and "hostname" in b.values), None)
         hostname = global_block.values["hostname"][0] if global_block else slug(self.source_file.rsplit(".", 1)[0])
         device_id = slug(hostname)
         device = Device(id=device_id, hostname=hostname, vendor="fortinet", network_os="fortios",
                         platform="FortiGate", source_file=self.source_file)
-        for warning in warnings: warning.device = device_id
+        for warning in unsupported: warning.device = device_id
+        warnings: list[ParserWarning] = []
 
         interfaces: list[Interface] = []
         vlans: list[VLAN] = []
@@ -198,6 +199,29 @@ class FortiOSParser(BaseConfigParser):
 
         policies: list[Policy] = []
         nat_rules: list[NATRule] = []
+
+        def unknown_addresses(names: list[str], seen: set[str] | None = None) -> set[str]:
+            seen = seen or set(); result: set[str] = set()
+            for name in names:
+                if name in seen or name in address_values: continue
+                if name in group_members:
+                    result.update(unknown_addresses(group_members[name], seen | {name})); continue
+                try:
+                    ipaddress.ip_network(name, strict=False)
+                except ValueError:
+                    result.add(name)
+            return result
+
+        def unknown_services(names: list[str], seen: set[str] | None = None) -> set[str]:
+            seen = seen or set(); result: set[str] = set()
+            for name in names:
+                if name in seen or name in service_values: continue
+                if name in service_groups:
+                    result.update(unknown_services(service_groups[name], seen | {name}))
+                else:
+                    result.add(name)
+            return result
+
         for sequence, block in enumerate([b for b in blocks if b.section == "firewall policy"], 1):
             if (block.values.get("status") or ["enable"])[0] == "disable":
                 continue
@@ -215,6 +239,12 @@ class FortiOSParser(BaseConfigParser):
                 from_zone=", ".join(source_names) or None, to_zone=", ".join(destination_names) or None,
                 trace=self._block_trace(block))
             policies.append(policy)
+            unresolved = unknown_addresses([*block.values.get("srcaddr", []), *block.values.get("dstaddr", [])])
+            unresolved.update(x for x in [*source_names, *destination_names] if x.lower() not in segment_by_name)
+            unresolved.update(unknown_services(block.values.get("service", [])))
+            for reference in sorted(unresolved):
+                warnings.append(ParserWarning(device=device_id, line=block.line_start,
+                    config="\n".join(block.raw_lines), reason=f"unresolved policy reference: {reference}", parser=self.parser_id))
             if (block.values.get("nat") or ["disable"])[0] == "enable":
                 nat_rules.append(NATRule(device=device_id, name=f"policy-{block.name}-snat", type="source",
                     original_src=policy.src[0], original_dst=policy.dst[0], translated_src="interface-address",
@@ -229,4 +259,4 @@ class FortiOSParser(BaseConfigParser):
                 interface=(block.values.get("device") or [None])[0], trace=self._block_trace(block)))
         return CanonicalConfig(device=device, interfaces=interfaces, vlans=vlans, segments=segments, zones=zones,
             routes=routes, policies=policies, nat=nat_rules, address_objects=address_objects,
-            service_objects=service_objects, warnings=warnings)
+            service_objects=service_objects, warnings=warnings, unsupported=unsupported)
