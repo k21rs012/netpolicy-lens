@@ -1,0 +1,24 @@
+set deviceconfig system hostname panos01
+set network interface ethernet ethernet1/1 layer3 ip 198.51.100.2/29
+set network interface ethernet ethernet1/2 layer3 ip 10.20.0.1/24
+set zone untrust network layer3 ethernet1/1
+set zone trust network layer3 ethernet1/2
+set address APP-NET ip-netmask 10.20.0.0/24
+set address ADMIN ip-netmask 10.20.0.10/32
+set address-group INTERNAL static [ APP-NET ADMIN ]
+set service service-https protocol tcp port 443
+set rulebase security rules OUTBOUND from trust
+set rulebase security rules OUTBOUND to untrust
+set rulebase security rules OUTBOUND source INTERNAL
+set rulebase security rules OUTBOUND destination any
+set rulebase security rules OUTBOUND application ssl
+set rulebase security rules OUTBOUND service application-default
+set rulebase security rules OUTBOUND action allow
+set rulebase nat rules DNAT-WEB from untrust
+set rulebase nat rules DNAT-WEB to untrust
+set rulebase nat rules DNAT-WEB source any
+set rulebase nat rules DNAT-WEB destination any
+set rulebase nat rules DNAT-WEB service service-https
+set rulebase nat rules DNAT-WEB destination-translation translated-address 10.20.0.20 translated-port 443
+set network virtual-router default routing-table ip static-route default destination 0.0.0.0/0
+set network virtual-router default routing-table ip static-route default nexthop ip-address 198.51.100.1

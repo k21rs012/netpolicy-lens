@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+.pytest_cache/
+.venv/
+.venv312/
+node_modules/
+dist/
+*.tsbuildinfo
+data/
+*.db
