@@ -33,6 +33,7 @@ class PANOSParser(BaseConfigParser):
 
     @classmethod
     def detect(cls, config: str) -> float:
+        config = re.sub(r"(?m)^set vsys \S+ ", "set ", config)
         score = 0.0
         score += 0.28 if re.search(r"(?m)^set deviceconfig system hostname ", config) else 0
         score += 0.24 if re.search(r"(?m)^set network interface (?:ethernet|aggregate-ethernet|loopback|vlan) ", config) else 0
@@ -40,6 +41,20 @@ class PANOSParser(BaseConfigParser):
         score += 0.14 if re.search(r"(?m)^set zone \S+ network ", config) else 0
         score += 0.10 if re.search(r"(?m)^set address \S+ (?:ip-netmask|ip-range|fqdn) ", config) else 0
         return min(score, 1.0)
+
+    def __init__(self, config: str, source_file: str):
+        # A PAN-OS set export may scope policy objects under ``vsys <name>``.
+        # Removing that prefix one line at a time keeps source line traces exact.
+        self.original_lines = config.splitlines()
+        config = re.sub(r"(?m)^set vsys \S+ ", "set ", config)
+        super().__init__(config, source_file)
+
+    def trace(self, line: int, raw: str, end: int | None = None):
+        trace = super().trace(line, raw, end)
+        line_end = end or line
+        if 0 < line <= line_end <= len(self.original_lines):
+            trace.raw_config = "\n".join(self.original_lines[line - 1:line_end])
+        return trace
 
     def parse(self) -> CanonicalConfig:
         hostname_match = re.search(r"(?m)^set deviceconfig system hostname\s+(\S+)", self.config)
@@ -80,7 +95,7 @@ class PANOSParser(BaseConfigParser):
                 service_objects.append(ServiceObject(device=device_id, name=match.group(1), protocol=match.group(2), ports=ports))
             elif match := re.match(r"set service-group (\S+) members (.+)", line):
                 service_groups[match.group(1)] = _tokens(match.group(2))
-            elif match := re.match(r"set rulebase security rules (\S+) (from|to|source|destination|application|service|action) (.+)", line):
+            elif match := re.match(r"set rulebase security rules (\S+) (from|to|source|destination|application|service|action|disabled) (.+)", line):
                 policy_data[match.group(1)][match.group(2)] = _tokens(match.group(3)); policy_lines[match.group(1)].append((number, raw))
             elif match := re.match(r"set rulebase nat rules (\S+) (from|to|source|destination|service|source-translation|destination-translation) (.+)", line):
                 nat_data[match.group(1)][match.group(2)] = _tokens(match.group(3)); nat_lines[match.group(1)].append((number, raw))
@@ -136,6 +151,8 @@ class PANOSParser(BaseConfigParser):
         segment_by_name = {z.name: z.segment_id for z in zones}
         policies: list[Policy] = []
         for sequence, (name, data) in enumerate(policy_data.items(), 1):
+            if (data.get("disabled") or ["no"])[0] == "yes":
+                continue
             protocols, ports = resolve_services(data.get("service", []), data.get("application", []))
             action = (data.get("action") or ["deny"])[0]
             canonical_action = "permit" if action in ("allow", "permit") else "deny" if action in ("deny", "drop", "reset-client", "reset-server", "reset-both") else "unknown"

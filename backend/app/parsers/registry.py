@@ -22,6 +22,7 @@ class ParserRegistry:
 
     @classmethod
     def detect(cls, config: str) -> list[Detection]:
+        config = config.lstrip("\ufeff")
         return sorted(
             [Detection(pid, parser.detect(config), parser) for pid, parser in cls._parsers.items()],
             key=lambda x: x.confidence,
@@ -30,6 +31,7 @@ class ParserRegistry:
 
     @classmethod
     def parse(cls, config: str, source_file: str, parser_id: str | None = None):
+        config = config.lstrip("\ufeff")
         ranked = cls.detect(config)
         if parser_id:
             parser = cls._parsers.get(parser_id)
@@ -46,4 +48,3 @@ class ParserRegistry:
     @classmethod
     def capabilities(cls):
         return [p.capabilities for p in cls._parsers.values()]
-

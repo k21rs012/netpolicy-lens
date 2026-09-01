@@ -199,6 +199,8 @@ class FortiOSParser(BaseConfigParser):
         policies: list[Policy] = []
         nat_rules: list[NATRule] = []
         for sequence, block in enumerate([b for b in blocks if b.section == "firewall policy"], 1):
+            if (block.values.get("status") or ["enable"])[0] == "disable":
+                continue
             source_names = block.values.get("srcintf", []); destination_names = block.values.get("dstintf", [])
             protocols, ports = resolve_services(block.values.get("service", []))
             action = (block.values.get("action") or ["deny"])[0]

@@ -13,7 +13,8 @@ def _acl_address(tokens: list[str], pos: int) -> tuple[str, int]:
     if pos >= len(tokens) or tokens[pos] == "any":
         return "any", pos + 1
     if tokens[pos] == "host" and pos + 1 < len(tokens):
-        return f"{tokens[pos + 1]}/32", pos + 2
+        value = tokens[pos + 1]
+        return f"{value}/128" if ":" in value else f"{value}/32", pos + 2
     if pos + 1 < len(tokens) and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", tokens[pos + 1]):
         try:
             return wildcard_to_network(tokens[pos], tokens[pos + 1]), pos + 2
@@ -33,7 +34,7 @@ class CiscoBaseParser(BaseConfigParser):
     def detect(cls, config: str) -> float:
         score = 0.0
         score += 0.32 if re.search(r"(?m)^interface (?:Gigabit|Fast|TenGigabit|Vlan|Loopback)", config) else 0
-        score += 0.28 if re.search(r"(?m)^ip access-list (?:standard|extended)", config) else 0
+        score += 0.28 if re.search(r"(?m)^(?:ip access-list (?:standard|extended)|ipv6 access-list) ", config) else 0
         score += 0.2 if re.search(r"(?m)^version \d+(?:\.\d+)*\s*$", config) else 0
         score += 0.1 if re.search(r"(?m)^vlan \d+", config) else 0
         score += 0.1 if re.search(r"(?m)^hostname \S+", config) else 0
@@ -64,7 +65,7 @@ class CiscoBaseParser(BaseConfigParser):
                 current_vlan = VLAN(device=device.id, id=int(match.group(1)), name=f"VLAN{match.group(1)}", trace=self.trace(number, raw))
                 vlans.append(current_vlan); current_if = None; current_acl = None
                 continue
-            if match := re.match(r"ip access-list\s+(?:standard|extended)\s+(.+)", line):
+            if match := re.match(r"(?:ip access-list\s+(?:standard|extended)|ipv6 access-list)\s+(.+)", line):
                 current_acl = match.group(1); current_if = None; current_vlan = None; acl_seq = 0
                 continue
             if not raw.startswith((" ", "\t")):
@@ -79,6 +80,8 @@ class CiscoBaseParser(BaseConfigParser):
                 elif match := re.match(r"switchport trunk allowed vlan\s+(.+)", line):
                     current_if.trunk_vlans = [int(x) for x in re.findall(r"\d+", match.group(1))]
                 elif match := re.match(r"ip access-group\s+(\S+)\s+(in|out)", line):
+                    (current_if.acl_in if match.group(2) == "in" else current_if.acl_out).append(match.group(1))
+                elif match := re.match(r"ipv6 traffic-filter\s+(\S+)\s+(in|out)", line):
                     (current_if.acl_in if match.group(2) == "in" else current_if.acl_out).append(match.group(1))
                 continue
             if current_vlan and (match := re.match(r"name\s+(.+)", line)):

@@ -14,11 +14,11 @@ docker compose up -d --build
 
 ## 実装済み
 
-- Cisco IOS / IOS-XE: Interface、VLAN、IPv4/IPv6 address、ACL、ACL binding、static route
+- Cisco IOS / IOS-XE: Interface、VLAN、IPv4/IPv6 address、IPv4/IPv6 ACL、ACL binding、static route
 - Juniper Junos / SRX: set形式・階層形式、Interface、Zone、Address Book、Security Policy、静的Route、定義済み/独自application解決
-- Yamaha RTX: Interface、VLAN、Filter、Filter binding、static route
+- Yamaha RTX: Interface、VLAN、IPv4/IPv6 Filter、Filter binding、static route
 - Fortinet FortiOS / FortiGate: Interface、VLAN、Zone、Address/Service Object・Group、Firewall Policy、static route、Policy NAT
-- Palo Alto PAN-OS: Interface、Zone、Address/Service Object・Group、Security Policy、Application解決、static route、NAT Policy
+- Palo Alto PAN-OS: set形式（vsys scope対応）、Interface、Zone、Address/Service Object・Group、Security Policy、Application解決、static route、NAT Policy
 - HPE Aruba AOS-CX: Interface、VLAN/SVI、IPv4/IPv6 ACL、`apply access-list` binding、static route
 - Arista EOS: Interface、VLAN/SVI、IPv4/IPv6 ACL、`ip access-group` binding、static route
 - AlliedWare Plus: Interface、VLAN/IP interface、software/hardware ACL、`access-group` / traffic-filter認識、static route

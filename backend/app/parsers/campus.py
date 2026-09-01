@@ -184,22 +184,41 @@ class AlliedWarePlusParser(CampusSwitchParser):
 
     def parse(self) -> CanonicalConfig:
         # Normalize AlliedWare Plus one-line ACLs and VLAN database entries to
-        # the same block form used by the campus parser. The original text and
-        # line count are preserved by one-to-one rewrites.
+        # the same block form used by the campus parser. A source-line map
+        # preserves traceability when one statement expands to multiple lines.
         rewritten: list[str] = []
+        source_lines: list[int] = []
         active_acl: str | None = None
-        for raw in self.lines:
+        for source_line, raw in enumerate(self.lines, 1):
             line = raw.strip()
             if match := re.match(r"vlan (\d+) name (\S+)", line):
-                rewritten.extend([f"vlan {match.group(1)}", f" name {match.group(2)}"]); continue
+                rewritten.extend([f"vlan {match.group(1)}", f" name {match.group(2)}"])
+                source_lines.extend([source_line, source_line]); continue
             if match := re.match(r"access-list (\S+) ((?:permit|deny) .+)", line):
-                if active_acl != match.group(1): rewritten.append(f"ip access-list {match.group(1)}"); active_acl = match.group(1)
-                rewritten.append(f" {match.group(2)}"); continue
-            rewritten.append(raw)
+                if active_acl != match.group(1):
+                    rewritten.append(f"ip access-list {match.group(1)}"); source_lines.append(source_line); active_acl = match.group(1)
+                rewritten.append(f" {match.group(2)}"); source_lines.append(source_line); continue
+            rewritten.append(raw); source_lines.append(source_line)
         original_config, original_lines = self.config, self.lines
         self.config, self.lines = "\n".join(rewritten), rewritten
         result = super().parse()
         self.config, self.lines = original_config, original_lines
+        # Rewrites can expand one source statement to multiple parser lines.
+        # Remap every trace so UI links point to the uploaded configuration.
+        traced_items = [
+            *result.interfaces, *result.vlans, *result.routes, *result.policies,
+            *result.nat, *result.zones,
+        ]
+        for item in traced_items:
+            trace = item.trace
+            if not trace or not (0 < trace.line_start <= len(source_lines)): continue
+            start = source_lines[trace.line_start - 1]
+            end_index = min(max(trace.line_end, trace.line_start), len(source_lines)) - 1
+            end = source_lines[end_index]
+            trace.line_start = start; trace.line_end = end
+            trace.raw_config = "\n".join(original_lines[start - 1:end])
+        for warning in result.warnings:
+            if 0 < warning.line <= len(source_lines): warning.line = source_lines[warning.line - 1]
         # AlliedWare Plus uses access-group under an interface, without the
         # leading `ip` keyword.
         current_iface: Interface | None = None

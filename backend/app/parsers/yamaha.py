@@ -17,9 +17,9 @@ class YamahaRTXParser(BaseConfigParser):
     def detect(cls, config: str) -> float:
         score = 0.0
         score += 0.38 if re.search(r"(?m)^ip (?:lan|vlan)\S* address ", config) else 0
-        score += 0.32 if re.search(r"(?m)^ip filter \d+ ", config) else 0
-        score += 0.2 if re.search(r"(?m)^ip \S+ secure filter (?:in|out)", config) else 0
-        score += 0.1 if re.search(r"(?m)^ip route default gateway", config) else 0
+        score += 0.32 if re.search(r"(?m)^(?:ip|ipv6) filter \d+ ", config) else 0
+        score += 0.2 if re.search(r"(?m)^(?:ip|ipv6) \S+ secure filter (?:in|out)", config) else 0
+        score += 0.1 if re.search(r"(?m)^(?:ip|ipv6) route default gateway", config) else 0
         return min(score, 1.0)
 
     def parse(self) -> CanonicalConfig:
@@ -34,11 +34,13 @@ class YamahaRTXParser(BaseConfigParser):
                 iface = ifaces.setdefault(match.group(1), Interface(device=device_id, name=match.group(1), trace=self.trace(n, raw))); iface.addresses.append(match.group(2))
             elif match := re.match(r"vlan (\S+) 802\.1q vid=(\d+)(?: name=(\S+))?", line):
                 vlans.append(VLAN(device=device_id, id=int(match.group(2)), name=match.group(3) or f"VLAN{match.group(2)}", trace=self.trace(n, raw)))
-            elif match := re.match(r"ip filter (\d+) (pass|reject|restrict) (\S+) (\S+) (\S+) (\S+) (\S+)", line):
+            elif match := re.match(r"(?:ip|ipv6) filter (\d+) (pass|reject|restrict) (\S+) (\S+) (\S+) (\S+) (\S+)", line):
                 action = {"pass": "permit", "reject": "reject", "restrict": "restrict"}[match.group(2)]
                 policies.append(Policy(id=f"{device_id}:filter:{match.group(1)}", device=device_id, name=f"filter-{match.group(1)}", sequence=int(match.group(1)), src=[match.group(3)], dst=[match.group(4)], protocol=[match.group(5)], src_ports=[match.group(6)], dst_ports=[match.group(7)], action=action, trace=self.trace(n, raw)))
-            elif match := re.match(r"ip (\S+) secure filter (in|out) (.+)", line): bindings.append((match.group(1), match.group(2), match.group(3).split()))
-            elif match := re.match(r"ip route (\S+) gateway (\S+)(?: (\S+))?", line): routes.append(Route(device=device_id, destination="0.0.0.0/0" if match.group(1) == "default" else match.group(1), next_hop=match.group(2), interface=match.group(3), trace=self.trace(n, raw)))
+            elif match := re.match(r"(?:ip|ipv6) (\S+) secure filter (in|out) (.+)", line): bindings.append((match.group(1), match.group(2), match.group(3).split()))
+            elif match := re.match(r"(ip|ipv6) route (\S+) gateway (\S+)(?: (\S+))?", line):
+                default = "::/0" if match.group(1) == "ipv6" else "0.0.0.0/0"
+                routes.append(Route(device=device_id, destination=default if match.group(2) == "default" else match.group(2), next_hop=match.group(3), interface=match.group(4), trace=self.trace(n, raw)))
         segments: list[Segment] = []
         for iface in ifaces.values():
             iface.segment_id = f"{device_id}-{slug(iface.name)}"; segments.append(Segment(id=iface.segment_id, name=iface.name.upper(), type="interface", device=device_id, networks=interface_networks(iface.addresses)))
@@ -51,4 +53,3 @@ class YamahaRTXParser(BaseConfigParser):
                     pmap[pid].interface = iface_name; pmap[pid].direction = direction
                     if iface.segment_id and direction == "in": pmap[pid].src_segments = [iface.segment_id]
         return CanonicalConfig(device=device, interfaces=list(ifaces.values()), vlans=vlans, segments=segments, routes=routes, policies=policies)
-
