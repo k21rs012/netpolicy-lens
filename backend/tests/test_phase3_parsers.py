@@ -37,6 +37,32 @@ def test_alliedware_plus_golden():
     assert cfg.policies[0].interface == "vlan120"
 
 
+def test_alliedware_classifier_traffic_filter_and_ipv6_binding():
+    raw = """! AlliedWare Plus
+hostname aw-edge
+vlan 120 name MGMT
+interface vlan120
+ ip address 10.120.0.1/24
+ traffic-filter EDGE-FILTER in
+ ipv6 traffic-filter V6-IN out
+access-list EDGE-ACL permit tcp 10.120.0.0/24 any eq 443
+ipv6 access-list V6-IN
+ permit tcp 2001:db8:120::/64 any eq 443
+classifier WEB
+ match access-group EDGE-ACL
+traffic-filter EDGE-FILTER
+ classifier WEB
+"""
+    cfg, _ = ParserRegistry.parse(raw, "aw-edge.conf")
+    iface = cfg.interfaces[0]
+    assert iface.acl_in == ["EDGE-ACL"]
+    assert iface.acl_out == ["V6-IN"]
+    edge = next(policy for policy in cfg.policies if policy.name == "EDGE-ACL")
+    ipv6 = next(policy for policy in cfg.policies if policy.name == "V6-IN")
+    assert edge.interface == "vlan120" and edge.direction == "in"
+    assert ipv6.interface == "vlan120" and ipv6.direction == "out"
+
+
 def test_vyos_golden_zone_firewall_and_nat():
     cfg, ranked = ParserRegistry.parse(SAMPLES["vyos01.set"], "vyos01.set")
     assert ranked[0].parser_id == "vyos"

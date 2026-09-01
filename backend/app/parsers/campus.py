@@ -222,14 +222,26 @@ class AlliedWarePlusParser(CampusSwitchParser):
         # AlliedWare Plus uses access-group under an interface, without the
         # leading `ip` keyword.
         current_iface: Interface | None = None
+        current_classifier: str | None = None
+        current_filter: str | None = None
+        classifier_acls: dict[str, list[str]] = defaultdict(list)
+        filter_classifiers: dict[str, list[str]] = defaultdict(list)
+        filter_bindings: list[tuple[str, str, str]] = []
         policy_index: dict[str, int] = defaultdict(int)
         for number, raw in enumerate(original_lines, 1):
             line = raw.strip()
+            indented = raw.startswith((" ", "\t"))
             if match := re.match(r"interface\s+(.+)", line):
                 current_iface = next((i for i in result.interfaces if i.name == match.group(1)), None)
+                current_classifier = None; current_filter = None
                 if current_iface: current_iface.trace = self.trace(number, raw)
                 continue
-            if not raw.startswith((" ", "\t")): current_iface = None
+            if not indented:
+                current_iface = None
+                if match := re.match(r"classifier\s+(\S+)$", line):
+                    current_classifier = match.group(1); current_filter = None; continue
+                if match := re.match(r"traffic-filter\s+(\S+)$", line):
+                    current_filter = match.group(1); current_classifier = None; continue
             if match := re.match(r"vlan (\d+) name (\S+)", line):
                 vlan = next((v for v in result.vlans if v.id == int(match.group(1))), None)
                 if vlan: vlan.trace = self.trace(number, raw)
@@ -244,4 +256,24 @@ class AlliedWarePlusParser(CampusSwitchParser):
                     iface.acl_in.append(match.group(1))
                     for policy in result.policies:
                         if policy.name == match.group(1): policy.interface = iface.name; policy.direction = "in"; policy.src_segments = [iface.segment_id] if iface.segment_id else []
+            if current_classifier and (match := re.match(r"match access-group\s+(\S+)", line)):
+                classifier_acls[current_classifier].append(match.group(1))
+            if current_filter and indented and (match := re.match(r"classifier\s+(\S+)", line)):
+                filter_classifiers[current_filter].append(match.group(1))
+            if current_iface and (match := re.match(r"(?:ipv6\s+)?traffic-filter\s+(\S+)\s+(in|out)", line)):
+                filter_bindings.append((current_iface.name, match.group(1), match.group(2)))
+        interface_by_name = {item.name: item for item in result.interfaces}
+        for interface_name, filter_name, direction in filter_bindings:
+            iface = interface_by_name[interface_name]
+            acl_names = [acl for classifier in filter_classifiers.get(filter_name, [])
+                         for acl in classifier_acls.get(classifier, [])]
+            if not acl_names and any(policy.name == filter_name for policy in result.policies):
+                acl_names = [filter_name]
+            target = iface.acl_in if direction == "in" else iface.acl_out
+            for acl_name in acl_names:
+                if acl_name not in target: target.append(acl_name)
+                for policy in result.policies:
+                    if policy.name == acl_name:
+                        policy.interface = iface.name; policy.direction = direction
+                        if iface.segment_id and direction == "in": policy.src_segments = [iface.segment_id]
         return result
