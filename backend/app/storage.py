@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .models import CanonicalConfig
+from .security import mask_canonical, mask_config
 
 
 class SnapshotStore:
@@ -25,7 +26,10 @@ class SnapshotStore:
         snapshot_id = str(uuid.uuid4())
         with self.connect() as con:
             con.execute("INSERT INTO snapshots VALUES (?, ?, ?, ?)", (snapshot_id, name, datetime.now(UTC).isoformat(), "0.1.0"))
-            con.executemany("INSERT INTO configs VALUES (?, ?, ?, ?, ?)", [(str(uuid.uuid4()), snapshot_id, filename, raw, cfg.model_dump_json()) for filename, raw, cfg in items])
+            con.executemany("INSERT INTO configs VALUES (?, ?, ?, ?, ?)", [
+                (str(uuid.uuid4()), snapshot_id, filename, mask_config(raw), mask_canonical(cfg).model_dump_json())
+                for filename, raw, cfg in items
+            ])
         return snapshot_id
 
     def list(self):

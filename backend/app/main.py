@@ -152,6 +152,19 @@ def parser_debug(snapshot_id: str | None = None):
     cfgs, resolved = configs(snapshot_id); return {"snapshot_id": resolved, "items": cfgs}
 
 
+@app.get("/api/parser/warnings")
+def parser_warnings(snapshot_id: str | None = None, device: str | None = None):
+    cfgs, resolved = configs(snapshot_id)
+    items = [
+        {**warning.model_dump(), "kind": kind}
+        for config in cfgs
+        for kind, warnings in (("warning", config.warnings), ("unsupported", config.unsupported))
+        for warning in warnings
+        if not device or warning.device == device
+    ]
+    return {"snapshot_id": resolved, "items": items, "count": len(items)}
+
+
 @app.get("/api/topology")
 def topology(snapshot_id: str | None = None):
     cfgs, resolved = configs(snapshot_id)

@@ -1,0 +1,21 @@
+{
+  "device":{"id":"cisco01","vendor":"cisco","network_os":"ios-xe"},
+  "interfaces":[
+    {"name":"Vlan10","addresses":["192.168.10.1/24"],"segment_id":"cisco01-vlan-10","acl_in":["USER-IN"],"acl_out":[]},
+    {"name":"Vlan20","addresses":["192.168.20.1/24"],"segment_id":"cisco01-vlan-20","acl_in":[],"acl_out":[]}
+  ],
+  "vlans":[
+    {"id":10,"name":"USER","subnets":["192.168.10.0/24"],"gateway":"192.168.10.1"},
+    {"id":20,"name":"SERVER","subnets":["192.168.20.0/24"],"gateway":"192.168.20.1"}
+  ],
+  "segments":[
+    {"id":"cisco01-vlan-10","name":"USER","type":"vlan","networks":["192.168.10.0/24"]},
+    {"id":"cisco01-vlan-20","name":"SERVER","type":"vlan","networks":["192.168.20.0/24"]}
+  ],
+  "routes":[],
+  "policies":[
+    {"name":"USER-IN","sequence":10,"action":"permit","src":["192.168.10.0/24"],"dst":["192.168.20.0/24"],"protocol":["tcp"],"dst_ports":["443"],"direction":"in","interface":"Vlan10","from_zone":null,"to_zone":null},
+    {"name":"USER-IN","sequence":20,"action":"deny","src":["192.168.10.0/24"],"dst":["192.168.20.0/24"],"protocol":["tcp"],"dst_ports":["22"],"direction":"in","interface":"Vlan10","from_zone":null,"to_zone":null},
+    {"name":"USER-IN","sequence":30,"action":"permit","src":["192.168.10.0/24"],"dst":["any"],"protocol":["ip"],"dst_ports":["any"],"direction":"in","interface":"Vlan10","from_zone":null,"to_zone":null}
+  ]
+}

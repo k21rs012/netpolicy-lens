@@ -1,0 +1,16 @@
+{
+  "device":{"id":"srx01","vendor":"juniper","network_os":"srx"},
+  "interfaces":[
+    {"name":"ge-0/0/1.0","addresses":["10.0.10.1/24"],"segment_id":"srx01-zone-trust","acl_in":[],"acl_out":[]},
+    {"name":"ge-0/0/2.0","addresses":["203.0.113.2/29"],"segment_id":"srx01-zone-untrust","acl_in":[],"acl_out":[]}
+  ],
+  "vlans":[],
+  "segments":[
+    {"id":"srx01-zone-trust","name":"TRUST","type":"zone","networks":["10.0.10.0/24"]},
+    {"id":"srx01-zone-untrust","name":"UNTRUST","type":"zone","networks":["203.0.113.0/29"]}
+  ],
+  "routes":[],
+  "policies":[
+    {"name":"WEB","sequence":1,"action":"permit","src":["LAN-NET"],"dst":["any"],"protocol":["tcp"],"dst_ports":["443"],"direction":"zone","interface":null,"from_zone":"trust","to_zone":"untrust"}
+  ]
+}

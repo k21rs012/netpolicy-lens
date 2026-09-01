@@ -1,0 +1,17 @@
+{
+  "device":{"id":"rtx01","vendor":"yamaha","network_os":"rtx"},
+  "interfaces":[
+    {"name":"lan1","addresses":["192.168.30.1/24"],"segment_id":"rtx01-lan1","acl_in":["100"],"acl_out":[]},
+    {"name":"lan2","addresses":["192.168.20.254/24"],"segment_id":"rtx01-lan2","acl_in":[],"acl_out":["101"]}
+  ],
+  "vlans":[],
+  "segments":[
+    {"id":"rtx01-lan1","name":"LAN1","type":"interface","networks":["192.168.30.0/24"]},
+    {"id":"rtx01-lan2","name":"LAN2","type":"interface","networks":["192.168.20.0/24"]}
+  ],
+  "routes":[{"destination":"0.0.0.0/0","next_hop":"192.168.20.1","interface":null}],
+  "policies":[
+    {"name":"filter-100","sequence":100,"action":"permit","src":["192.168.30.0/24"],"dst":["192.168.20.0/24"],"protocol":["tcp"],"dst_ports":["22"],"direction":"in","interface":"lan1","from_zone":null,"to_zone":null},
+    {"name":"filter-101","sequence":101,"action":"reject","src":["*"],"dst":["192.168.30.0/24"],"protocol":["*"],"dst_ports":["*"],"direction":"out","interface":"lan2","from_zone":null,"to_zone":null}
+  ]
+}

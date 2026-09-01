@@ -28,13 +28,15 @@ docker compose up -d --build
 - `ALLOW` / `DENY` / `PARTIAL` / `UNKNOWN` / `SAME_SEGMENT` Matrix
 - Matrixセル詳細とRule trace
 - Device / Policy / Parser Debug / Capability画面
+- Device詳細（Interface、VLAN、Zone、Route、Policy、NAT、Warning、Unsupported）
+- Password / Secret / SNMP Communityの保存・表示時マスク
 - Snapshot単位のSQLite保存
 - Snapshot間の通信可否／Policy／Interface・VLAN・Zone Diff（新規ALLOW優先表示）
 - Device・SegmentのTopology Graph（同一サブネット接続は `INFERRED` と明示）
 - Source / Destination / Protocol / Port指定の複数機器Path探索とhop単位Policy trace
 - 経路なしを `NO_ROUTE`、Policy根拠不足を `UNKNOWN` として分離
 - 複数ファイル・ZIP import、機器ごとのconfig貼り付けImport
-- Docker Compose、Parser unit test、API end-to-end test
+- Docker Compose、Parser unit test、Golden Test、API end-to-end test
 
 NX-OS / ASA / ExtremeXOSなどの追加Parser、物理・動的経路情報の取込、Batfish連携は拡張対象です。UIのCapability Matrixでは予定機能を「予定」と区別します。
 
@@ -95,6 +97,7 @@ Vite: [http://localhost:5173](http://localhost:5173)、API docs: [http://localho
 | GET | `/api/matrix` | Segment Matrix |
 | GET | `/api/matrix/{src}/{dst}` | セル根拠 |
 | GET | `/api/parser/debug` | Canonical JSON |
+| GET | `/api/parser/warnings` | Parser Warning / Unsupported一覧 |
 | GET | `/api/parser/capabilities` | 対応機能一覧 |
 | GET | `/api/snapshots` | Import履歴 |
 | GET | `/api/diff?before={id}&after={id}` | Snapshot間Diff |
@@ -131,6 +134,7 @@ npm run build
 - Topologyの機器間リンクは設定内サブネットの重複から推定し、物理配線を保証しません。
 - 現MVPはstateful behavior、dynamic routing、NAT後の完全な到達性を再現しません。
 - 未解決オブジェクトや適用関係が曖昧な場合は `UNKNOWN` を優先します。
-- Secret mask / RBACは次の実装対象です。本番で機密configを扱う際は、ホスト側のvolume権限も制限してください。
+- Password / Secret / SNMP CommunityはSnapshot保存前にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
+- RBACと元configへのアクセス権分離は次の実装対象です。
 
 License: Apache-2.0を想定（公開時に`LICENSE`を追加してください）。

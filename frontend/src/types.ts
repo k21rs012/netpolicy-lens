@@ -4,6 +4,8 @@ export interface Trace{device:string;interface?:string;policy:string;sequence:nu
 export interface Cell{source:string;destination:string;result:Result;allowed:string[];denied:string[];policy_ids:string[];traces:Trace[]}
 export interface MatrixData{snapshot_id:string|null;segments:Segment[];cells:Cell[]}
 export interface Device{id:string;hostname:string;vendor:string;network_os:string;platform?:string;source_file:string;confidence:number;counts:Record<string,number>}
+export interface ParserWarning{device:string;line:number;config:string;reason:string;parser:string;kind?:'warning'|'unsupported'}
+export interface DeviceDetail{device:Device;interfaces:any[];vlans:any[];segments:Segment[];zones:any[];routes:any[];policies:Policy[];nat:any[];address_objects:any[];service_objects:any[];warnings:ParserWarning[];unsupported:ParserWarning[]}
 export interface Policy{id:string;device:string;name:string;sequence:number;src:string[];dst:string[];protocol:string[];dst_ports:string[];action:string;interface?:string;from_zone?:string;to_zone?:string;trace?:{source_file:string;line_start:number;raw_config:string}}
 export interface Capability{parser_id:string;label:string;interfaces:boolean;vlans:boolean;zones:boolean;routes:boolean;acl:boolean;firewall_policy:boolean;nat:boolean;ipv6:boolean;status:string}
 export interface Snapshot{id:string;name:string;created_at:string;parser_version:string;device_count:number}
