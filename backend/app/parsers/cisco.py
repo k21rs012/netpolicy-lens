@@ -34,7 +34,7 @@ class CiscoBaseParser(BaseConfigParser):
         score = 0.0
         score += 0.32 if re.search(r"(?m)^interface (?:Gigabit|Fast|TenGigabit|Vlan|Loopback)", config) else 0
         score += 0.28 if re.search(r"(?m)^ip access-list (?:standard|extended)", config) else 0
-        score += 0.2 if re.search(r"(?m)^version \d+", config) else 0
+        score += 0.2 if re.search(r"(?m)^version \d+(?:\.\d+)*\s*$", config) else 0
         score += 0.1 if re.search(r"(?m)^vlan \d+", config) else 0
         score += 0.1 if re.search(r"(?m)^hostname \S+", config) else 0
         return min(score, 1.0)
@@ -148,7 +148,7 @@ class CiscoIOSParser(CiscoBaseParser):
         score = super().detect(config)
         # IOS-XE also accepts much of the classic IOS syntax. A modern major
         # version is a tie-breaker, not a single-signal detector.
-        if re.search(r"(?m)^version (?:1[6-9]|[2-9]\d)(?:\.|$)", config):
+        if re.search(r"(?m)^version (?:1[6-9]|[2-9]\d)(?:\.\d+)*\s*$", config):
             score -= 0.08
         return max(score, 0.0)
 
@@ -162,5 +162,5 @@ class CiscoIOSXEParser(CiscoBaseParser):
     @classmethod
     def detect(cls, config: str) -> float:
         base = super().detect(config)
-        if re.search(r"(?m)^version (?:1[5-9]|[2-9]\d)(?:\.|$)", config): base += 0.12
+        if re.search(r"(?m)^version (?:1[5-9]|[2-9]\d)(?:\.\d+)*\s*$", config): base += 0.12
         return min(base, 1.0)

@@ -15,7 +15,7 @@ docker compose up -d --build
 ## 実装済み
 
 - Cisco IOS / IOS-XE: Interface、VLAN、IPv4/IPv6 address、ACL、ACL binding、static route
-- Juniper Junos / SRX: Interface、Zone、Address Book、Security Policy、定義済みapplication解決
+- Juniper Junos / SRX: set形式・階層形式、Interface、Zone、Address Book、Security Policy、静的Route、定義済み/独自application解決
 - Yamaha RTX: Interface、VLAN、Filter、Filter binding、static route
 - Fortinet FortiOS / FortiGate: Interface、VLAN、Zone、Address/Service Object・Group、Firewall Policy、static route、Policy NAT
 - Palo Alto PAN-OS: Interface、Zone、Address/Service Object・Group、Security Policy、Application解決、static route、NAT Policy
