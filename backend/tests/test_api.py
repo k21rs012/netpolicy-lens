@@ -31,7 +31,8 @@ def test_capabilities_include_phase_two_firewalls(tmp_path: Path):
     assert any(c["parser_id"] == "arista_eos" and c["status"] == "available" for c in data)
     assert any(c["parser_id"] == "alliedware_plus" and c["status"] == "available" for c in data)
     assert any(c["parser_id"] == "vyos" and c["status"] == "available" for c in data)
-    assert any(c["parser_id"] == "cisco_nxos" and c["status"] == "planned" for c in data)
+    for parser_id in ("cisco_nxos", "cisco_asa", "cisco_ftd", "extreme_exos", "extreme_voss", "mikrotik_routeros"):
+        assert any(c["parser_id"] == parser_id and c["status"] == "available" for c in data)
 
 
 def test_import_multiple_pasted_device_configs_as_one_snapshot(tmp_path: Path):

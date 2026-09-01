@@ -74,8 +74,10 @@ class CiscoBaseParser(BaseConfigParser):
                 current_if = None; current_vlan = None; current_acl = None
             if current_if:
                 if match := re.match(r"description\s+(.+)", line): current_if.description = match.group(1)
-                elif match := re.match(r"ip address\s+(\S+)\s+(\S+)", line):
-                    try: current_if.addresses.append(f"{match.group(1)}/{mask_to_prefix(match.group(2))}")
+                elif match := re.match(r"ip address\s+(\S+)(?:\s+(\S+))?", line):
+                    try:
+                        address = match.group(1) if "/" in match.group(1) else f"{match.group(1)}/{mask_to_prefix(match.group(2) or '')}"
+                        current_if.addresses.append(address)
                     except ValueError: warnings.append(ParserWarning(device=device.id, line=number, config=line, reason="invalid IPv4 address", parser=self.parser_id))
                 elif match := re.match(r"ipv6 address\s+(\S+)", line): current_if.addresses.append(match.group(1))
                 elif match := re.match(r"switchport access vlan\s+(\d+)", line): current_if.vlan_id = int(match.group(1))
@@ -188,3 +190,38 @@ class CiscoIOSXEParser(CiscoBaseParser):
         base = super().detect(config)
         if re.search(r"(?m)^version (?:1[5-9]|[2-9]\d)(?:\.\d+)*\s*$", config): base += 0.12
         return min(base, 1.0)
+
+
+@ParserRegistry.register
+class CiscoNXOSParser(CiscoBaseParser):
+    parser_id = "cisco_nxos"
+    network_os = "nx-os"
+    capabilities = CiscoBaseParser.capabilities.model_copy(
+        update={"parser_id": "cisco_nxos", "label": "Cisco NX-OS"}
+    )
+
+    @classmethod
+    def detect(cls, config: str) -> float:
+        score = 0.0
+        score += 0.55 if re.search(r"(?mi)^(?:!Command: show running-config|version .*NX-?OS|boot nxos)", config) else 0
+        score += 0.2 if re.search(r"(?m)^feature (?:interface-vlan|nxapi|vpc|ospf)", config) else 0
+        score += 0.15 if re.search(r"(?m)^interface Ethernet\d+/", config) else 0
+        score += 0.1 if re.search(r"(?m)^hostname \S+", config) else 0
+        return min(score, 1.0)
+
+    def parse(self) -> CanonicalConfig:
+        self.config = re.sub(
+            r"(?m)^ip access-list (?!standard\s|extended\s)(\S+)",
+            r"ip access-list extended \1",
+            self.config,
+        )
+        self.lines = self.config.splitlines()
+        result = super().parse()
+        existing = {(route.destination, route.next_hop) for route in result.routes}
+        for number, raw in enumerate(self.lines, 1):
+            line = raw.strip()
+            match = re.match(r"ip route\s+(\S+/\d+)\s+(?:\S+\s+)?(\d+\.\d+\.\d+\.\d+)", line)
+            if match and (match.group(1), match.group(2)) not in existing:
+                result.routes.append(Route(device=result.device.id, destination=match.group(1),
+                    next_hop=match.group(2), trace=self.trace(number, raw)))
+        return result

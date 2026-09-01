@@ -55,16 +55,7 @@ def health(): return {"status": "ok", "version": app.version}
 
 @app.get("/api/parser/capabilities")
 def capabilities():
-    planned = [
-        {"parser_id": "cisco_nxos", "label": "Cisco NX-OS"},
-        {"parser_id": "cisco_asa", "label": "Cisco ASA"},
-        {"parser_id": "extreme_exos", "label": "ExtremeXOS"},
-        {"parser_id": "mikrotik_routeros", "label": "MikroTik RouterOS"},
-    ]
-    defaults = {"interfaces": True, "vlans": True, "zones": False, "routes": True,
-        "acl": True, "firewall_policy": False, "nat": False, "address_objects": False,
-        "service_objects": False, "ipv4": True, "ipv6": True, "status": "planned"}
-    return [c.model_dump() for c in ParserRegistry.capabilities()] + [{**defaults, **item} for item in planned]
+    return [capability.model_dump() for capability in ParserRegistry.capabilities()]
 
 
 @app.post("/api/configs/detect")

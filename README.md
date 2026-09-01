@@ -17,6 +17,8 @@ docker compose up -d --build
 | Network OS | IF | VLAN | Route | ACL | Zone | Policy | NAT | IPv6 |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Cisco IOS / IOS-XE | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| Cisco NX-OS | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
+| Cisco ASA / FTD | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Juniper Junos / SRX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Yamaha RTX | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
 | Fortinet FortiOS | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -25,10 +27,14 @@ docker compose up -d --build
 | Arista EOS | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
 | AlliedWare Plus | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
 | VyOS | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ExtremeXOS / VOSS | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
+| MikroTik RouterOS | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
 
 ## 実装済み
 
 - Cisco IOS / IOS-XE: Interface、VLAN、IPv4/IPv6 address、IPv4/IPv6 ACL、ACL binding、static route、static/PAT NAT
+- Cisco NX-OS: Ethernet/SVI、VLAN、IPv4/IPv6 ACL、ACL binding、prefix形式のstatic route
+- Cisco ASA / FTD: Interface/nameif、Zone Segment、Network Object、extended ACL、access-group binding、static route、object/manual NAT
 - Juniper Junos / SRX: set形式・階層形式、Interface、VLAN、Zone、Address Book/Set、Security Policy、静的Route、source/destination/static NAT、定義済み/独自application解決
 - Yamaha RTX: Interface、802.1Q VLAN、IPv4/IPv6 Filter、Filter binding、static route、NAT descriptor
 - Fortinet FortiOS / FortiGate: Interface、VLAN、Zone、Address/Service Object・Group、Firewall Policy、static route、Policy NAT
@@ -37,6 +43,8 @@ docker compose up -d --build
 - Arista EOS: Interface、VLAN/SVI、IPv4/IPv6 ACL、`ip access-group` binding、static route
 - AlliedWare Plus: Interface、VLAN/IP interface、software/hardware ACL、`access-group` / traffic-filter認識、static route
 - VyOS: Interface/VIF、Zone、IPv4/IPv6 Firewall、Zone Policy、Firewall Group、static route、source/destination NAT
+- ExtremeXOS / VOSS: VLAN/SVI、IPv4 address、static route、基本ACL
+- MikroTik RouterOS: VLAN/Interface、Address List、Firewall Filter、static route、source/destination NAT
 - Network OS自動検出（複数特徴のスコアリング）
 - Canonical Modelとraw config / line trace
 - `ALLOW` / `DENY` / `PARTIAL` / `UNKNOWN` / `SAME_SEGMENT` Matrix
@@ -50,11 +58,11 @@ docker compose up -d --build
 - Source / Destination / Protocol / Port指定の複数機器Path探索とhop単位Policy trace
 - 経路なしを `NO_ROUTE`、Policy根拠不足を `UNKNOWN` として分離
 - 複数ファイル・フォルダ・ZIP import、機器ごとのconfig貼り付け、検出プレビュー、OS手動補正、部分失敗表示
-- Device/Vendor/OS/Zone/VLAN/Segment/Protocol/Port Matrix filterとPolicy filter
+- Site/Device/Vendor/OS/Zone/VLAN/Segment/Protocol/Port Matrix filterとPolicy filter
 - Secretマスク済みCanonical JSON Export
-- Docker Compose、全9パーサーGolden Test、API end-to-end test、GitHub Actions CI
+- Docker Compose、Parser契約/Golden Test、API end-to-end test、Playwright実ブラウザE2E、GitHub Actions CI
 
-NX-OS / ASA / ExtremeXOSなどの追加Parser、物理・動的経路情報の取込、Batfish連携は拡張対象です。UIのCapability Matrixでは予定機能を「予定」と区別します。
+物理・動的経路情報の取込、Batfish連携、各OSの高度な独自構文は拡張対象です。未解釈のセキュリティ構文はParser Debugで確認できます。
 
 ## Architecture
 
@@ -142,6 +150,7 @@ PYTHONPATH=. pytest -q
 
 cd ../frontend
 npm run build
+npm run test:e2e
 ```
 
 ## Security / limitations
