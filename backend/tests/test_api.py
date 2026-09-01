@@ -66,12 +66,15 @@ def test_preview_and_per_file_parser_override(tmp_path: Path):
 
     response = client.post(
         "/api/configs/import",
-        data={"parser_ids": json.dumps({"manual.conf": "cisco_ios"})},
+        data={"parser_ids": json.dumps({"manual.conf": "cisco_ios"}),
+              "sites": json.dumps({"known.conf": "Tokyo-DC", "manual.conf": "Osaka-Branch"})},
         files=files,
     )
     assert response.status_code == 200
     assert len(response.json()["imported"]) == 2
     assert response.json()["results"][1]["parser_id"] == "cisco_ios"
+    devices = client.get("/api/devices").json()["items"]
+    assert {item["site"] for item in devices} == {"Tokyo-DC", "Osaka-Branch"}
 
 
 def test_import_reports_partial_failures_without_dropping_success(tmp_path: Path):

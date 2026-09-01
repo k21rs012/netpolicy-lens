@@ -27,6 +27,7 @@ class Device(BaseModel):
     network_os: str
     platform: str | None = None
     source_file: str
+    site: str | None = None
     confidence: float = 0.0
 
 
@@ -177,4 +178,3 @@ class MatrixCell(BaseModel):
     denied: list[str] = Field(default_factory=list)
     policy_ids: list[str] = Field(default_factory=list)
     traces: list[dict[str, Any]] = Field(default_factory=list)
-

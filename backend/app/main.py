@@ -87,13 +87,15 @@ def preview_configs(files: list[UploadFile] = File(...)):
 
 @app.post("/api/configs/import")
 def import_configs(files: list[UploadFile] = File(...), snapshot_name: str | None = Form(None),
-                   parser_id: str | None = Form(None), parser_ids: str | None = Form(None)):
+                   parser_id: str | None = Form(None), parser_ids: str | None = Form(None),
+                   sites: str | None = Form(None)):
     try:
         overrides = json.loads(parser_ids) if parser_ids else {}
+        site_map = json.loads(sites) if sites else {}
     except json.JSONDecodeError as exc:
-        raise HTTPException(422, "parser_ids must be a JSON object") from exc
-    if not isinstance(overrides, dict):
-        raise HTTPException(422, "parser_ids must be a JSON object")
+        raise HTTPException(422, "parser_ids and sites must be JSON objects") from exc
+    if not isinstance(overrides, dict) or not isinstance(site_map, dict):
+        raise HTTPException(422, "parser_ids and sites must be JSON objects")
     parsed = []
     errors = []
     results = []
@@ -101,6 +103,7 @@ def import_configs(files: list[UploadFile] = File(...), snapshot_name: str | Non
         try:
             selected_parser = overrides.get(filename) or parser_id
             cfg, ranked = ParserRegistry.parse(raw, filename, selected_parser)
+            cfg.device.site = (str(site_map[filename]).strip() or None) if filename in site_map else None
             parsed.append((filename, raw, cfg))
             results.append({"source_file": filename, "status": "imported", "parser_id": selected_parser or ranked[0].parser_id,
                             "confidence": cfg.device.confidence, "hostname": cfg.device.hostname})

@@ -1,70 +1,2317 @@
-import{useEffect,useMemo,useState}from'react';
-import{Activity,AlertTriangle,ArrowRight,Braces,Check,ChevronRight,CircleHelp,ClipboardPaste,Clock3,Database,Download,FileCode2,Filter,GitCompareArrows,LayoutGrid,Menu,Minus,Network,Plus,RefreshCw,Route,Search,Server,ShieldCheck,Trash2,Upload,Wifi,WifiOff,X,Zap}from'lucide-react';
-import{api}from'./api';import type{Capability,Cell,Device,DeviceDetail,DiffData,MatrixData,ObjectDiff,ParserWarning,Policy,ReachabilityData,Result,Segment,Snapshot,TopologyData,TopologyNode}from'./types';
+import { useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Braces,
+  Check,
+  ChevronRight,
+  CircleHelp,
+  ClipboardPaste,
+  Clock3,
+  Database,
+  Download,
+  FileCode2,
+  Filter,
+  GitCompareArrows,
+  LayoutGrid,
+  Menu,
+  Minus,
+  Network,
+  Plus,
+  RefreshCw,
+  Route,
+  Search,
+  Server,
+  ShieldCheck,
+  Trash2,
+  Upload,
+  Wifi,
+  WifiOff,
+  X,
+  Zap,
+} from "lucide-react";
+import { api } from "./api";
+import type {
+  Capability,
+  Cell,
+  Device,
+  DeviceDetail,
+  DiffData,
+  MatrixData,
+  ObjectDiff,
+  ParserWarning,
+  Policy,
+  ReachabilityData,
+  Result,
+  Segment,
+  Snapshot,
+  TopologyData,
+  TopologyNode,
+} from "./types";
 
-const resultLabel:Record<Result,string>={ALLOW:'許可',DENY:'拒否',PARTIAL:'一部許可',UNKNOWN:'不明',SAME_SEGMENT:'同一',NO_ROUTE:'経路なし'};
-const nav=[['matrix','ポリシーマトリクス',LayoutGrid],['topology','Topology / Path',Route],['diff','Snapshot Diff',GitCompareArrows],['policies','ポリシー',ShieldCheck],['devices','デバイス',Server],['debug','Parser Debug',Braces],['capabilities','対応状況',Activity]] as const;
+const resultLabel: Record<Result, string> = {
+  ALLOW: "許可",
+  DENY: "拒否",
+  PARTIAL: "一部許可",
+  UNKNOWN: "不明",
+  SAME_SEGMENT: "同一",
+  NO_ROUTE: "経路なし",
+};
+const nav = [
+  ["matrix", "ポリシーマトリクス", LayoutGrid],
+  ["topology", "Topology / Path", Route],
+  ["diff", "Snapshot Diff", GitCompareArrows],
+  ["policies", "ポリシー", ShieldCheck],
+  ["devices", "デバイス", Server],
+  ["debug", "Parser Debug", Braces],
+  ["capabilities", "対応状況", Activity],
+] as const;
 
-function Status({value,compact=false}:{value:Result;compact?:boolean}){return <span className={`status ${value.toLowerCase()} ${compact?'compact':''}`}>{value==='ALLOW'?<Check/>:value==='DENY'?<X/>:value==='PARTIAL'?<Zap/>:value==='UNKNOWN'?<CircleHelp/>:value==='NO_ROUTE'?<WifiOff/>:<span>—</span>}{!compact&&resultLabel[value]}</span>}
-function Empty({load}:{load:()=>void}){return <div className="empty"><div className="empty-visual"><Network/><i/><i/><i/></div><h2>まだネットワークがありません</h2><p>サンプル構成を読み込むか、実機の設定ファイルをアップロードしてください。</p><button className="primary" onClick={load}><Zap/>サンプルで始める</button></div>}
-
-function Matrix({data,onCell}:{data:MatrixData;onCell:(c:Cell)=>void}){
- const[devices,setDevices]=useState<Device[]>([]);const[query,setQuery]=useState('');const[device,setDevice]=useState('');const[vendor,setVendor]=useState('');const[networkOs,setNetworkOs]=useState('');const[type,setType]=useState('');const[vlan,setVlan]=useState('');const[result,setResult]=useState('');
- useEffect(()=>{api.devices().then(value=>setDevices(value.items)).catch(()=>{})},[]);const deviceById=useMemo(()=>Object.fromEntries(devices.map(d=>[d.id,d])),[devices]);const segments=useMemo(()=>data.segments.filter(s=>{const owner=deviceById[s.device];const text=[s.name,s.id,s.device,...s.networks].join(' ').toLowerCase();return(!query||text.includes(query.toLowerCase()))&&(!device||s.device===device)&&(!vendor||owner?.vendor===vendor)&&(!networkOs||owner?.network_os===networkOs)&&(!type||s.type===type)&&(!vlan||String(s.vlan_id??'')===vlan)}),[data.segments,deviceById,query,device,vendor,networkOs,type,vlan]);const ids=new Set(segments.map(s=>s.id));const cells=data.cells.filter(c=>ids.has(c.source)&&ids.has(c.destination)&&(!result||c.result===result));const filtered={...data,segments,cells};const clear=()=>{setQuery('');setDevice('');setVendor('');setNetworkOs('');setType('');setVlan('');setResult('')};const active=!!(query||device||vendor||networkOs||type||vlan||result);const vendors=[...new Set(devices.map(d=>d.vendor))].sort();const operatingSystems=[...new Set(devices.map(d=>d.network_os))].sort();const types=[...new Set(data.segments.map(s=>s.type))].sort();const vlans=[...new Set(data.segments.flatMap(s=>s.vlan_id==null?[]:[s.vlan_id]))].sort((a,b)=>a-b);
- return <><div className="matrix-advanced"><div className="search"><Search/><input aria-label="Segmentを検索" placeholder="Segment / subnetを検索" value={query} onChange={e=>setQuery(e.target.value)}/></div><label>Device<select aria-label="デバイスで絞り込み" value={device} onChange={e=>setDevice(e.target.value)}><option value="">ALL</option>{devices.map(d=><option value={d.id} key={d.id}>{d.hostname}</option>)}</select></label><label>Vendor<select aria-label="ベンダーで絞り込み" value={vendor} onChange={e=>setVendor(e.target.value)}><option value="">ALL</option>{vendors.map(x=><option key={x}>{x}</option>)}</select></label><label>OS<select aria-label="OSで絞り込み" value={networkOs} onChange={e=>setNetworkOs(e.target.value)}><option value="">ALL</option>{operatingSystems.map(x=><option key={x}>{x}</option>)}</select></label><label>Type<select aria-label="Segment種別で絞り込み" value={type} onChange={e=>setType(e.target.value)}><option value="">ALL</option>{types.map(x=><option key={x}>{x}</option>)}</select></label><label>VLAN<select aria-label="VLANで絞り込み" value={vlan} onChange={e=>setVlan(e.target.value)}><option value="">ALL</option>{vlans.map(x=><option key={x} value={x}>{x}</option>)}</select></label><label>Result<select aria-label="判定結果で絞り込み" value={result} onChange={e=>setResult(e.target.value)}><option value="">ALL</option>{(['ALLOW','DENY','PARTIAL','UNKNOWN','SAME_SEGMENT'] as Result[]).map(x=><option key={x}>{x}</option>)}</select></label><button disabled={!active} onClick={clear}><X/>クリア</button><span>{segments.length} / {data.segments.length} segments</span></div>{segments.length?<div className="matrix-wrap"><table className="matrix"><thead><tr><th className="corner">送信元 <ChevronRight/> 宛先</th>{filtered.segments.map(s=><th key={s.id}><span>{s.name}</span><small>{s.device} · {s.type.toUpperCase()}</small></th>)}</tr></thead><tbody>{filtered.segments.map(src=><tr key={src.id}><th><span>{src.name}</span><small>{src.device} · {src.networks[0]||'no subnet'}</small></th>{filtered.segments.map(dst=>{const c=filtered.cells.find(x=>x.source===src.id&&x.destination===dst.id);return <td key={dst.id}>{c?<button className={`cell ${c.result.toLowerCase()}`} onClick={()=>onCell(c)} title={`${src.name} (${src.device}) → ${dst.name} (${dst.device})`}><Status value={c.result} compact/><small>{c.allowed[0]||c.denied[0]||''}</small></button>:<span className="filtered-cell">—</span>}</td>})}</tr>)}</tbody></table><div className="legend">{(['ALLOW','DENY','PARTIAL','UNKNOWN','SAME_SEGMENT'] as Result[]).map(x=><Status key={x} value={x}/>)}</div></div>:<div className="matrix-no-results"><Search/>条件に一致するSegmentがありません<button onClick={clear}>条件をクリア</button></div>}</>
+function Status({
+  value,
+  compact = false,
+}: {
+  value: Result;
+  compact?: boolean;
+}) {
+  return (
+    <span
+      className={`status ${value.toLowerCase()} ${compact ? "compact" : ""}`}
+    >
+      {value === "ALLOW" ? (
+        <Check />
+      ) : value === "DENY" ? (
+        <X />
+      ) : value === "PARTIAL" ? (
+        <Zap />
+      ) : value === "UNKNOWN" ? (
+        <CircleHelp />
+      ) : value === "NO_ROUTE" ? (
+        <WifiOff />
+      ) : (
+        <span>—</span>
+      )}
+      {!compact && resultLabel[value]}
+    </span>
+  );
+}
+function Empty({ load }: { load: () => void }) {
+  return (
+    <div className="empty">
+      <div className="empty-visual">
+        <Network />
+        <i />
+        <i />
+        <i />
+      </div>
+      <h2>まだネットワークがありません</h2>
+      <p>
+        サンプル構成を読み込むか、実機の設定ファイルをアップロードしてください。
+      </p>
+      <button className="primary" onClick={load}>
+        <Zap />
+        サンプルで始める
+      </button>
+    </div>
+  );
 }
 
-function Detail({cell,segments,close}:{cell:Cell;segments:Segment[];close:()=>void}){const name=(id:string)=>segments.find(s=>s.id===id)?.name||id;return <aside className="drawer" role="dialog" aria-modal="true" aria-label="通信判定の詳細"><div className="drawer-head"><div><small>通信判定の詳細</small><h2>{name(cell.source)} <ChevronRight/> {name(cell.destination)}</h2></div><button className="icon" aria-label="詳細を閉じる" title="閉じる" onClick={close}><X/></button></div><div className="verdict"><Status value={cell.result}/><p>{cell.result==='UNKNOWN'?'明示的なポリシー根拠を確認できません。安全のため許可とは判定しません。':'一致した設定ルールに基づく静的解析結果です。'}</p></div>{(cell.allowed.length>0||cell.denied.length>0)&&<div className="split"><section><label>許可</label>{cell.allowed.map(x=><span className="service allow" key={x}>{x}</span>)}</section><section><label>拒否</label>{cell.denied.map(x=><span className="service deny" key={x}>{x}</span>)}</section></div>}<h3>Rule trace</h3>{cell.traces.length?cell.traces.map((t,i)=><div className="trace" key={i}><div className="trace-line"><span>{i+1}</span><b>{t.device}</b><small>{t.interface||'zone policy'}</small></div><div className="trace-rule"><FileCode2/><div><b>{t.policy} / Rule {t.sequence}</b><code>{t.trace?.raw_config||t.service}</code><small>{t.trace&&`${t.trace.source_file}:${t.trace.line_start}`}</small></div></div><Status value={t.action==='permit'?'ALLOW':'DENY'}/></div>):<div className="no-trace"><CircleHelp/><p>一致するルールがありません</p></div>}</aside>}
-
-function Policies({items}:{items:Policy[]}){const[query,setQuery]=useState('');const[device,setDevice]=useState('');const[vendor,setVendor]=useState('');const[networkOs,setNetworkOs]=useState('');const[source,setSource]=useState('');const[destination,setDestination]=useState('');const[action,setAction]=useState('');const[protocol,setProtocol]=useState('');const[port,setPort]=useState('');const[deviceItems,setDeviceItems]=useState<Device[]>([]);useEffect(()=>{api.devices().then(value=>setDeviceItems(value.items)).catch(()=>{})},[]);const deviceMap=Object.fromEntries(deviceItems.map(x=>[x.id,x]));const devices=[...new Set(items.map(p=>p.device))].sort();const vendors=[...new Set(deviceItems.map(x=>x.vendor))].sort();const operatingSystems=[...new Set(deviceItems.map(x=>x.network_os))].sort();const protocols=[...new Set(items.flatMap(p=>p.protocol))].sort();const rows=items.filter(p=>{const owner=deviceMap[p.device];const src=(p.from_zone||p.src.join(', ')).toLowerCase();const dst=(p.to_zone||p.dst.join(', ')).toLowerCase();return(!device||p.device===device)&&(!vendor||owner?.vendor===vendor)&&(!networkOs||owner?.network_os===networkOs)&&(!source||src.includes(source.toLowerCase()))&&(!destination||dst.includes(destination.toLowerCase()))&&(!action||p.action===action)&&(!protocol||p.protocol.includes(protocol))&&(!port||p.dst_ports.some(x=>x.includes(port)))&&JSON.stringify(p).toLowerCase().includes(query.toLowerCase())});return <div className="panel"><div className="toolbar policy-toolbar"><div className="search"><Search/><input aria-label="ポリシーを検索" placeholder="ポリシー名を検索" value={query} onChange={e=>setQuery(e.target.value)}/></div><label>Device<select aria-label="ポリシーのデバイス" value={device} onChange={e=>setDevice(e.target.value)}><option value="">ALL</option>{devices.map(x=><option key={x}>{x}</option>)}</select></label><label>Vendor<select aria-label="ポリシーのベンダー" value={vendor} onChange={e=>setVendor(e.target.value)}><option value="">ALL</option>{vendors.map(x=><option key={x}>{x}</option>)}</select></label><label>OS<select aria-label="ポリシーのOS" value={networkOs} onChange={e=>setNetworkOs(e.target.value)}><option value="">ALL</option>{operatingSystems.map(x=><option key={x}>{x}</option>)}</select></label><label>Source<input aria-label="ポリシーの送信元" value={source} onChange={e=>setSource(e.target.value)} placeholder="any"/></label><label>Destination<input aria-label="ポリシーの宛先" value={destination} onChange={e=>setDestination(e.target.value)} placeholder="any"/></label><label>Action<select aria-label="ポリシーのアクション" value={action} onChange={e=>setAction(e.target.value)}><option value="">ALL</option><option value="permit">ALLOW</option><option value="deny">DENY</option><option value="reject">REJECT</option><option value="restrict">RESTRICT</option></select></label><label>Protocol<select aria-label="ポリシーのプロトコル" value={protocol} onChange={e=>setProtocol(e.target.value)}><option value="">ALL</option>{protocols.map(x=><option key={x}>{x.toUpperCase()}</option>)}</select></label><label>Port<input aria-label="ポリシーのポート" value={port} onChange={e=>setPort(e.target.value)} placeholder="any"/></label><span className="result-count">{rows.length} / {items.length} 件</span></div><div className="table-scroll"><table className="data-table"><thead><tr><th>デバイス / ポリシー</th><th>送信元</th><th>宛先</th><th>プロトコル</th><th>ポート</th><th>アクション</th><th>根拠</th></tr></thead><tbody>{rows.map(p=><tr key={p.id}><td><b>{p.device}</b><small>{p.name} · #{p.sequence}</small></td><td>{p.from_zone||p.src.join(', ')}</td><td>{p.to_zone||p.dst.join(', ')}</td><td>{p.protocol.join(', ').toUpperCase()}</td><td><code>{p.dst_ports.join(', ')}</code></td><td><Status value={p.action==='permit'?'ALLOW':'DENY'}/></td><td><small>{p.trace?.source_file}:{p.trace?.line_start}</small></td></tr>)}</tbody></table></div></div>}
-
-function Devices({items,onSelect}:{items:Device[];onSelect:(device:Device)=>void}){return <div className="cards">{items.map(d=><article className="device-card" key={d.id} role="button" tabIndex={0} onClick={()=>onSelect(d)} onKeyDown={e=>e.key==='Enter'&&onSelect(d)}><div className={`vendor ${d.vendor}`}><Server/></div><div className="device-title"><div><h3>{d.hostname}</h3><p>{d.vendor.toUpperCase()} · {d.network_os.toUpperCase()}</p></div><span className="confidence">{Math.round(d.confidence*100)}% 検出</span></div><div className="device-stats"><span><b>{d.counts.interfaces||0}</b>Interfaces</span><span><b>{d.counts.segments||0}</b>Segments</span><span><b>{d.counts.policies||0}</b>Policies</span><span><b>{d.counts.nat||0}</b>NAT</span></div><footer><FileCode2/>{d.source_file}<span className={d.counts.warnings||d.counts.unsupported?'warning-dot':'clean-dot'}/>{(d.counts.warnings||0)+(d.counts.unsupported||0)} issues<ChevronRight/></footer></article>)}</div>}
-
-function WarningRows({items,kind}:{items:ParserWarning[];kind:string}){return items.length?<div className="issue-list">{items.map((item,index)=><article key={`${kind}:${item.line}:${index}`}><AlertTriangle/><div><b>{item.reason}</b><code>{item.config}</code><small>{item.parser} · line {item.line}</small></div></article>)}</div>:<div className="detail-empty"><Check/>該当項目はありません</div>}
-function DeviceDetailDrawer({device,close}:{device:Device;close:()=>void}){const[data,setData]=useState<DeviceDetail|null>(null);const[tab,setTab]=useState('interfaces');useEffect(()=>{api.device(device.id).then(setData)},[device.id]);const sections=data?{interfaces:data.interfaces,vlans:data.vlans,zones:data.zones,segments:data.segments,routes:data.routes,policies:data.policies,nat:data.nat,address_objects:data.address_objects,service_objects:data.service_objects,warnings:data.warnings,unsupported:data.unsupported}:{} as Record<string,any[]>;const labels:Record<string,string>={interfaces:'Interfaces',vlans:'VLANs',zones:'Zones',segments:'Segments',routes:'Routes',policies:'Policies',nat:'NAT',address_objects:'Addresses',service_objects:'Services',warnings:'Warnings',unsupported:'Unsupported'};return <aside className="drawer device-drawer" role="dialog" aria-modal="true" aria-label={`${device.hostname}の詳細`}><div className="drawer-head"><div><small>DEVICE DETAIL</small><h2><Server/>{device.hostname}</h2><p>{device.vendor.toUpperCase()} · {device.network_os.toUpperCase()} · {device.source_file}</p></div><button className="icon" aria-label="デバイス詳細を閉じる" title="閉じる" onClick={close}><X/></button></div>{!data?<div className="loading drawer-loading"><RefreshCw className="spin"/>詳細を読み込み中</div>:<><div className="device-detail-stats"><span><b>{data.interfaces.length}</b>IF</span><span><b>{data.segments.length}</b>Segments</span><span><b>{data.routes.length}</b>Routes</span><span><b>{data.policies.length}</b>Policies</span><span><b>{data.nat.length}</b>NAT</span><span className={(data.warnings.length+data.unsupported.length)?'has-issues':''}><b>{data.warnings.length+data.unsupported.length}</b>Issues</span></div><div className="detail-tabs">{Object.keys(sections).map(key=><button className={tab===key?'active':''} onClick={()=>setTab(key)} key={key}>{labels[key]}<span>{sections[key].length}</span></button>)}</div><div className="detail-content">{tab==='warnings'?<WarningRows items={data.warnings} kind="warning"/>:tab==='unsupported'?<WarningRows items={data.unsupported} kind="unsupported"/>:sections[tab]?.length?<div className="object-list">{sections[tab].map((item,index)=><article key={item.id||item.name||index}><div><b>{item.name||item.destination||item.id||`${labels[tab]} ${index+1}`}</b><small>{item.description||item.action||item.type||item.interface||''}</small></div><pre>{JSON.stringify(item,null,2)}</pre></article>)}</div>:<div className="detail-empty"><Check/>{labels[tab]}はありません</div>}</div><p className="masked-note"><ShieldCheck/>保存・表示されるPassword、Secret、SNMP Communityは自動的にマスクされます。</p></>}</aside>}
-
-function Capabilities({items}:{items:Capability[]}){const keys=[['interfaces','IF'],['vlans','VLAN'],['routes','Route'],['acl','ACL'],['zones','Zone'],['firewall_policy','Policy'],['nat','NAT'],['ipv6','IPv6']] as const;return <div className="panel"><div className="callout"><Activity/><div><b>Parser Plugin Architecture</b><p>新しいNetwork OSはParserを登録するだけで、AnalyzerとUIへ自動的に反映されます。</p></div></div><table className="data-table capability"><thead><tr><th>Network OS</th>{keys.map(k=><th key={k[0]}>{k[1]}</th>)}<th>Status</th></tr></thead><tbody>{items.map(c=><tr key={c.parser_id}><td><b>{c.label}</b><small>{c.parser_id}</small></td>{keys.map(([k])=><td key={k}>{c[k]?<Check className="yes"/>:<span className="dash">—</span>}</td>)}<td><span className={`stage ${c.status}`}>{c.status==='available'?'利用可能':'予定'}</span></td></tr>)}</tbody></table></div>}
-
-function Debug({data}:{data:any[]}){const[selected,setSelected]=useState(0);const download=()=>{const item=data[selected];if(!item)return;const blob=new Blob([JSON.stringify(item,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`${item.device.hostname}-canonical.json`;link.click();URL.revokeObjectURL(url)};return <div className="debug"><div className="debug-list">{data.map((x,i)=><button className={i===selected?'active':''} onClick={()=>setSelected(i)} key={x.device.id}><FileCode2/><span>{x.device.hostname}<small>{x.device.network_os}</small></span><ChevronRight/></button>)}</div><div className="debug-output"><div><span><ShieldCheck/>Secretマスク済みCanonical JSON</span><button onClick={download} disabled={!data.length}><Download/>JSON Export</button></div><pre>{data.length?JSON.stringify(data[selected],null,2):'No parser output'}</pre></div></div>}
-
-const changeLabel:Record<ObjectDiff['change'],string>={ADDED:'追加',REMOVED:'削除',CHANGED:'変更'};
-const valueText=(value:any)=>Array.isArray(value)?value.join(', '):value==null?'—':String(value);
-function SnapshotDiff({snapshots}:{snapshots:Snapshot[]}){
- const[before,setBefore]=useState('');const[after,setAfter]=useState('');const[data,setData]=useState<DiffData|null>(null);const[busy,setBusy]=useState(false);const[error,setError]=useState('');
- useEffect(()=>{if(snapshots.length>=2){setAfter(x=>x||snapshots[0].id);setBefore(x=>x||snapshots[1].id)}},[snapshots]);
- useEffect(()=>{if(!before||!after||before===after){setData(null);return}setBusy(true);setError('');api.diff(before,after).then(setData).catch(e=>setError(String(e))).finally(()=>setBusy(false))},[before,after]);
- if(snapshots.length<2)return <div className="empty diff-empty"><GitCompareArrows/><h2>比較するSnapshotが足りません</h2><p>Config Importを2回以上実行すると、変更前後を比較できます。</p></div>;
- const risky=data?.communications.filter(x=>x.new_allow.length)||[];const other=data?.communications.filter(x=>!x.new_allow.length)||[];
- return <div className="diff-page"><div className="diff-controls"><div><small>BASELINE</small><label><select aria-label="比較元Snapshot" value={before} onChange={e=>setBefore(e.target.value)}>{snapshots.map(s=><option value={s.id} key={s.id}>{s.name} · {new Date(s.created_at).toLocaleString('ja-JP')}</option>)}</select></label></div><ArrowRight/><div><small>AFTER CHANGE</small><label><select aria-label="比較先Snapshot" value={after} onChange={e=>setAfter(e.target.value)}>{snapshots.map(s=><option value={s.id} key={s.id}>{s.name} · {new Date(s.created_at).toLocaleString('ja-JP')}</option>)}</select></label></div>{busy&&<RefreshCw className="spin"/>}</div>{before===after&&<div className="diff-note"><CircleHelp/>異なるSnapshotを選択してください。</div>}{error&&<div className="diff-note error"><AlertTriangle/>{error}</div>}{data&&<><div className="diff-summary"><article className="risk"><span>新しく許可</span><b>{data.summary.new_allow}</b><AlertTriangle/><small>要レビュー</small></article><article><span>新しく拒否</span><b>{data.summary.new_deny}</b><ShieldCheck/><small>通信影響</small></article><article><span>変更ルール</span><b>{data.summary.changed_rules}</b><GitCompareArrows/><small>追加 {data.summary.added_rules} · 削除 {data.summary.removed_rules}</small></article><article><span>Network変更</span><b>{data.summary.network_changes}</b><Network/><small>IF / VLAN / Zone</small></article></div><section className="diff-section"><div className="section-head"><div><small>REACHABILITY CHANGES</small><h2>通信可否の変更</h2></div><span>{data.communications.length} changes</span></div>{risky.length>0&&<div className="risk-banner"><AlertTriangle/><div><b>新しく許可された通信があります</b><p>意図した変更か、Rule Traceと変更元configを確認してください。</p></div></div>}<div className="diff-list">{[...risky,...other].map((row,i)=><article className={row.new_allow.length?'comm-change new-allow':'comm-change'} key={`${row.source}:${row.destination}:${i}`}><div className="comm-path"><span><b>{row.source_label}</b><small>{row.source_device}</small></span><ArrowRight/><span><b>{row.destination_label}</b><small>{row.destination_device}</small></span></div><div className="result-shift">{row.before_result?<Status value={row.before_result}/>:<span>—</span>}<ArrowRight/>{row.after_result?<Status value={row.after_result}/>:<span>—</span>}</div><div className="service-deltas">{row.new_allow.map(x=><span className="delta allow" key={`a${x}`}><Plus/>ALLOW {x}</span>)}{row.new_deny.map(x=><span className="delta deny" key={`d${x}`}><Plus/>DENY {x}</span>)}{row.removed_allow.map(x=><span className="delta removed" key={`ra${x}`}><Minus/>ALLOW {x}</span>)}{row.removed_deny.map(x=><span className="delta removed" key={`rd${x}`}><Minus/>DENY {x}</span>)}</div>{row.after_traces[0]?.trace&&<code>{row.after_traces[0].trace.source_file}:{row.after_traces[0].trace.line_start}</code>}</article>)}{!data.communications.length&&<div className="diff-none"><Check/>通信可否の変更はありません</div>}</div></section><section className="diff-section"><div className="section-head"><div><small>CANONICAL POLICY DIFF</small><h2>Policy変更</h2></div><span>{data.policies.length} changes</span></div><ObjectDiffTable items={data.policies}/></section><section className="diff-section"><div className="section-head"><div><small>NETWORK STRUCTURE DIFF</small><h2>Interface / VLAN / Zone変更</h2></div><span>{data.network.length} changes</span></div><ObjectDiffTable items={data.network}/></section></>}</div>
+function Matrix({
+  data,
+  onCell,
+}: {
+  data: MatrixData;
+  onCell: (c: Cell) => void;
+}) {
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [query, setQuery] = useState("");
+  const [device, setDevice] = useState("");
+  const [site, setSite] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [networkOs, setNetworkOs] = useState("");
+  const [type, setType] = useState("");
+  const [vlan, setVlan] = useState("");
+  const [result, setResult] = useState("");
+  useEffect(() => {
+    api
+      .devices()
+      .then((value) => setDevices(value.items))
+      .catch(() => {});
+  }, []);
+  const deviceById = useMemo(
+    () => Object.fromEntries(devices.map((d) => [d.id, d])),
+    [devices],
+  );
+  const segments = useMemo(
+    () =>
+      data.segments.filter((s) => {
+        const owner = deviceById[s.device];
+        const text = [s.name, s.id, s.device, ...s.networks]
+          .join(" ")
+          .toLowerCase();
+        return (
+          (!query || text.includes(query.toLowerCase())) &&
+          (!device || s.device === device) &&
+          (!site || owner?.site === site) &&
+          (!vendor || owner?.vendor === vendor) &&
+          (!networkOs || owner?.network_os === networkOs) &&
+          (!type || s.type === type) &&
+          (!vlan || String(s.vlan_id ?? "") === vlan)
+        );
+      }),
+    [
+      data.segments,
+      deviceById,
+      query,
+      device,
+      site,
+      vendor,
+      networkOs,
+      type,
+      vlan,
+    ],
+  );
+  const ids = new Set(segments.map((s) => s.id));
+  const cells = data.cells.filter(
+    (c) =>
+      ids.has(c.source) &&
+      ids.has(c.destination) &&
+      (!result || c.result === result),
+  );
+  const filtered = { ...data, segments, cells };
+  const clear = () => {
+    setQuery("");
+    setDevice("");
+    setSite("");
+    setVendor("");
+    setNetworkOs("");
+    setType("");
+    setVlan("");
+    setResult("");
+  };
+  const active = !!(
+    query ||
+    device ||
+    site ||
+    vendor ||
+    networkOs ||
+    type ||
+    vlan ||
+    result
+  );
+  const sites = [
+    ...new Set(devices.flatMap((d) => (d.site ? [d.site] : []))),
+  ].sort();
+  const vendors = [...new Set(devices.map((d) => d.vendor))].sort();
+  const operatingSystems = [
+    ...new Set(devices.map((d) => d.network_os)),
+  ].sort();
+  const types = [...new Set(data.segments.map((s) => s.type))].sort();
+  const vlans = [
+    ...new Set(
+      data.segments.flatMap((s) => (s.vlan_id == null ? [] : [s.vlan_id])),
+    ),
+  ].sort((a, b) => a - b);
+  return (
+    <>
+      <div className="matrix-advanced">
+        <div className="search">
+          <Search />
+          <input
+            aria-label="Segmentを検索"
+            placeholder="Segment / subnetを検索"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <label>
+          Device
+          <select
+            aria-label="デバイスで絞り込み"
+            value={device}
+            onChange={(e) => setDevice(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {devices.map((d) => (
+              <option value={d.id} key={d.id}>
+                {d.hostname}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Site
+          <select
+            aria-label="Siteで絞り込み"
+            value={site}
+            onChange={(e) => setSite(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {sites.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Vendor
+          <select
+            aria-label="ベンダーで絞り込み"
+            value={vendor}
+            onChange={(e) => setVendor(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {vendors.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          OS
+          <select
+            aria-label="OSで絞り込み"
+            value={networkOs}
+            onChange={(e) => setNetworkOs(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {operatingSystems.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Type
+          <select
+            aria-label="Segment種別で絞り込み"
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {types.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          VLAN
+          <select
+            aria-label="VLANで絞り込み"
+            value={vlan}
+            onChange={(e) => setVlan(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {vlans.map((x) => (
+              <option key={x} value={x}>
+                {x}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Result
+          <select
+            aria-label="判定結果で絞り込み"
+            value={result}
+            onChange={(e) => setResult(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {(
+              [
+                "ALLOW",
+                "DENY",
+                "PARTIAL",
+                "UNKNOWN",
+                "SAME_SEGMENT",
+              ] as Result[]
+            ).map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <button disabled={!active} onClick={clear}>
+          <X />
+          クリア
+        </button>
+        <span>
+          {segments.length} / {data.segments.length} segments
+        </span>
+      </div>
+      {segments.length ? (
+        <div className="matrix-wrap">
+          <table className="matrix">
+            <thead>
+              <tr>
+                <th className="corner">
+                  送信元 <ChevronRight /> 宛先
+                </th>
+                {filtered.segments.map((s) => (
+                  <th key={s.id}>
+                    <span>{s.name}</span>
+                    <small>
+                      {deviceById[s.device]?.site
+                        ? `${deviceById[s.device].site} · `
+                        : ""}
+                      {s.device} · {s.type.toUpperCase()}
+                    </small>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.segments.map((src) => (
+                <tr key={src.id}>
+                  <th>
+                    <span>{src.name}</span>
+                    <small>
+                      {src.device} · {src.networks[0] || "no subnet"}
+                    </small>
+                  </th>
+                  {filtered.segments.map((dst) => {
+                    const c = filtered.cells.find(
+                      (x) => x.source === src.id && x.destination === dst.id,
+                    );
+                    return (
+                      <td key={dst.id}>
+                        {c ? (
+                          <button
+                            className={`cell ${c.result.toLowerCase()}`}
+                            onClick={() => onCell(c)}
+                            title={`${src.name} (${src.device}) → ${dst.name} (${dst.device})`}
+                          >
+                            <Status value={c.result} compact />
+                            <small>{c.allowed[0] || c.denied[0] || ""}</small>
+                          </button>
+                        ) : (
+                          <span className="filtered-cell">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="legend">
+            {(
+              [
+                "ALLOW",
+                "DENY",
+                "PARTIAL",
+                "UNKNOWN",
+                "SAME_SEGMENT",
+              ] as Result[]
+            ).map((x) => (
+              <Status key={x} value={x} />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="matrix-no-results">
+          <Search />
+          条件に一致するSegmentがありません
+          <button onClick={clear}>条件をクリア</button>
+        </div>
+      )}
+    </>
+  );
 }
 
-function ObjectDiffTable({items}:{items:ObjectDiff[]}){return items.length?<div className="table-scroll"><table className="data-table diff-table"><thead><tr><th>変更</th><th>対象</th><th>変更フィールド</th><th>Before</th><th>After</th></tr></thead><tbody>{items.map(item=><tr key={`${item.kind}:${item.key}:${item.change}`}><td><span className={`change ${item.change.toLowerCase()}`}>{changeLabel[item.change]}</span></td><td><b>{item.key}</b><small>{item.kind.toUpperCase()}</small></td><td>{item.fields.length?item.fields.map(x=><code key={x.field}>{x.field}</code>):'—'}</td><td>{item.fields.length?item.fields.map(x=><small key={x.field}>{x.field}: {valueText(x.before)}</small>):<small>{item.before?.name||item.before?.id||'—'}</small>}</td><td>{item.fields.length?item.fields.map(x=><small key={x.field}>{x.field}: {valueText(x.after)}</small>):<small>{item.after?.name||item.after?.id||'—'}</small>}</td></tr>)}</tbody></table></div>:<div className="diff-none"><Check/>変更はありません</div>}
-
-function TopologyView(){
- const[data,setData]=useState<TopologyData|null>(null);const[result,setResult]=useState<ReachabilityData|null>(null);const[src,setSrc]=useState('');const[dst,setDst]=useState('');const[protocol,setProtocol]=useState('tcp');const[port,setPort]=useState('443');const[busy,setBusy]=useState(false);const[error,setError]=useState('');
- useEffect(()=>{api.topology().then((value:TopologyData)=>{setData(value);const segments=value.nodes.filter(n=>n.type==='segment');setSrc(segments[0]?.entity_id||'');setDst(segments[1]?.entity_id||segments[0]?.entity_id||'')}).catch(e=>setError(String(e)))},[]);
- const analyze=async()=>{if(!src||!dst)return;setBusy(true);setError('');try{setResult(await api.reachability(src,dst,protocol,port))}catch(e){setError(String(e))}finally{setBusy(false)}};
- if(!data)return error?<div className="empty error-state" role="alert"><AlertTriangle/><h2>Topologyを読み込めませんでした</h2><p>{error}</p></div>:<div className="loading"><RefreshCw className="spin"/>Topologyを生成中</div>;
- const segments=data.nodes.filter(n=>n.type==='segment');const devices=data.nodes.filter(n=>n.type==='device');const segmentPositions=Object.fromEntries(segments.map((n,i)=>[n.id,{x:90+i*150,y:285}]));const positions:Record<string,{x:number;y:number}>={...segmentPositions};
- devices.forEach((n,i)=>{const owned=data.edges.filter(e=>e.type==='owns'&&e.source===n.id).map(e=>segmentPositions[e.target]?.x).filter(Boolean);positions[n.id]={x:owned.length?owned.reduce((a,b)=>a+b,0)/owned.length:90+i*170,y:75}});const width=Math.max(1040,segments.length*150+30);const nodeById=Object.fromEntries(data.nodes.map(n=>[n.id,n]));const pathSet=new Set(result?.path||[]);
- const optionLabel=(n:TopologyNode)=>`${n.label} (${n.device||n.subtitle})`;
- return <div className="topology-page"><div className="topology-summary"><article><Network/><span>Devices<b>{data.summary.devices}</b></span></article><article><LayoutGrid/><span>Segments<b>{data.summary.segments}</b></span></article><article><Wifi/><span>推定リンク<b>{data.summary.adjacencies}</b></span></article><div><b>Topology confidence</b><p>同一サブネットの機器間リンクは設定情報からの推定です。</p></div></div><section className="topology-panel"><div className="section-head"><div><small>CANONICAL TOPOLOGY</small><h2>Network graph</h2></div><div className="topology-legend"><span><i className="exact"/>所有関係</span><span><i className="inferred"/>推定接続</span></div></div><div className="topology-canvas"><svg viewBox={`0 0 ${width} 390`} style={{width,height:390}}>{data.edges.map(e=>{const a=positions[e.source],b=positions[e.target];if(!a||!b)return null;const active=pathSet.has(e.source)&&pathSet.has(e.target);return <g key={e.id}><line className={`${e.type} ${active?'path-active':''}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y}/>{e.type==='adjacent'&&<text x={(a.x+b.x)/2} y={(a.y+b.y)/2-8}>{e.label}</text>}</g>})}{data.nodes.map(n=>{const p=positions[n.id];const active=pathSet.has(n.id);return <g key={n.id} className={`topology-node ${n.type} ${active?'path-active':''}`} transform={`translate(${p.x},${p.y})`}><rect x={-62} y={-27} width={124} height={54} rx={8}/>{n.type==='device'?<Server x={-53} y={-9}/>:<Network x={-53} y={-9}/>}<text className="node-label" x={-29} y={-4}>{n.label.slice(0,17)}</text><text className="node-subtitle" x={-29} y={12}>{n.subtitle.slice(0,21)}</text></g>})}</svg></div></section><section className="path-panel"><div className="section-head"><div><small>END-TO-END REACHABILITY</small><h2>Path trace</h2></div><Route/></div><div className="path-controls"><label>Source<select value={src} onChange={e=>setSrc(e.target.value)}>{segments.map(n=><option key={n.id} value={n.entity_id}>{optionLabel(n)}</option>)}</select></label><ArrowRight/><label>Destination<select value={dst} onChange={e=>setDst(e.target.value)}>{segments.map(n=><option key={n.id} value={n.entity_id}>{optionLabel(n)}</option>)}</select></label><label>Protocol<select value={protocol} onChange={e=>setProtocol(e.target.value)}><option>tcp</option><option>udp</option><option>icmp</option></select></label><label>Port<input value={port} onChange={e=>setPort(e.target.value)} placeholder="any"/></label><button className="primary" onClick={analyze} disabled={busy}>{busy?<RefreshCw className="spin"/>:<Route/>}経路を解析</button></div>{error&&<div className="diff-note error"><AlertTriangle/>{error}</div>}{result&&<div className="path-result"><div className="path-verdict"><Status value={result.result}/><span>{result.protocol.toUpperCase()}{result.port?` / ${result.port}`:''}</span><small>設定ベースの静的推定結果</small></div>{result.path.length>0?<div className="path-chain">{result.path.map((id,i)=><span key={id}><b>{nodeById[id]?.label||id}</b><small>{nodeById[id]?.type==='device'?'policy hop':'segment'}</small>{i<result.path.length-1&&<ArrowRight/>}</span>)}</div>:<div className="no-route"><WifiOff/><p>設定から到達可能な経路を構成できません。</p></div>}<div className="hop-list">{result.steps.map((step,i)=><article key={`${step.device}:${i}`}><span className="hop-number">{i+1}</span><div><small>HOP {i+1}</small><h3>{nodeById[`device:${step.device}`]?.label||step.device}</h3><p>{nodeById[`segment:${step.ingress}`]?.label} → {nodeById[`segment:${step.egress}`]?.label}</p></div><div className="hop-reason"><b>{step.reason}</b>{step.trace&&<><code>{step.trace.raw_config}</code><small>{step.trace.source_file}:{step.trace.line_start}</small></>}</div><Status value={step.result}/></article>)}</div></div>}<p className="topology-note"><CircleHelp/>動的ルーティング、物理配線、稼働状態は含まれません。根拠不足はUNKNOWNとして扱います。</p></section></div>
+function Detail({
+  cell,
+  segments,
+  close,
+}: {
+  cell: Cell;
+  segments: Segment[];
+  close: () => void;
+}) {
+  const name = (id: string) => segments.find((s) => s.id === id)?.name || id;
+  return (
+    <aside
+      className="drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label="通信判定の詳細"
+    >
+      <div className="drawer-head">
+        <div>
+          <small>通信判定の詳細</small>
+          <h2>
+            {name(cell.source)} <ChevronRight /> {name(cell.destination)}
+          </h2>
+        </div>
+        <button
+          className="icon"
+          aria-label="詳細を閉じる"
+          title="閉じる"
+          onClick={close}
+        >
+          <X />
+        </button>
+      </div>
+      <div className="verdict">
+        <Status value={cell.result} />
+        <p>
+          {cell.result === "UNKNOWN"
+            ? "明示的なポリシー根拠を確認できません。安全のため許可とは判定しません。"
+            : "一致した設定ルールに基づく静的解析結果です。"}
+        </p>
+      </div>
+      {(cell.allowed.length > 0 || cell.denied.length > 0) && (
+        <div className="split">
+          <section>
+            <label>許可</label>
+            {cell.allowed.map((x) => (
+              <span className="service allow" key={x}>
+                {x}
+              </span>
+            ))}
+          </section>
+          <section>
+            <label>拒否</label>
+            {cell.denied.map((x) => (
+              <span className="service deny" key={x}>
+                {x}
+              </span>
+            ))}
+          </section>
+        </div>
+      )}
+      <h3>Rule trace</h3>
+      {cell.traces.length ? (
+        cell.traces.map((t, i) => (
+          <div className="trace" key={i}>
+            <div className="trace-line">
+              <span>{i + 1}</span>
+              <b>{t.device}</b>
+              <small>{t.interface || "zone policy"}</small>
+            </div>
+            <div className="trace-rule">
+              <FileCode2 />
+              <div>
+                <b>
+                  {t.policy} / Rule {t.sequence}
+                </b>
+                <code>{t.trace?.raw_config || t.service}</code>
+                <small>
+                  {t.trace && `${t.trace.source_file}:${t.trace.line_start}`}
+                </small>
+              </div>
+            </div>
+            <Status value={t.action === "permit" ? "ALLOW" : "DENY"} />
+          </div>
+        ))
+      ) : (
+        <div className="no-trace">
+          <CircleHelp />
+          <p>一致するルールがありません</p>
+        </div>
+      )}
+    </aside>
+  );
 }
 
-type PastedConfig={id:number;filename:string;content:string};
-type ImportPreview={source_file:string;detected:{parser_id:string;confidence:number}|null;candidates:{parser_id:string;confidence:number}[];needs_confirmation:boolean};
-function ImportDialog({close,done}:{close:()=>void;done:()=>void}){
- const[mode,setMode]=useState<'files'|'paste'>('files');const[files,setFiles]=useState<File[]>([]);const[name,setName]=useState(`snapshot-${new Date().toISOString().slice(0,10)}`);const[busy,setBusy]=useState(false);const[error,setError]=useState('');const[pasted,setPasted]=useState<PastedConfig[]>([{id:1,filename:'device-1.conf',content:''}]);const[preview,setPreview]=useState<ImportPreview[]>([]);const[overrides,setOverrides]=useState<Record<string,string>>({});const[capabilities,setCapabilities]=useState<Capability[]>([]);const[result,setResult]=useState<any>(null);
- useEffect(()=>{api.capabilities().then((items:Capability[])=>setCapabilities(items.filter(x=>x.status==='available'))).catch(()=>{})},[]);
- const invalidate=()=>{setPreview([]);setOverrides({});setResult(null)};const update=(id:number,field:'filename'|'content',value:string)=>{setPasted(rows=>rows.map(row=>row.id===id?{...row,[field]:value}:row));invalidate()};const add=()=>{setPasted(rows=>[...rows,{id:Math.max(0,...rows.map(x=>x.id))+1,filename:`device-${rows.length+1}.conf`,content:''}]);invalidate()};const remove=(id:number)=>{setPasted(rows=>rows.filter(row=>row.id!==id));invalidate()};const validPasted=pasted.filter(x=>x.content.trim());
- const targets=()=>mode==='files'?files:validPasted.map((row,index)=>{let filename=row.filename.trim()||`device-${index+1}.conf`;if(!/\.[a-z0-9]+$/i.test(filename))filename+=`.conf`;return new File([row.content],filename,{type:'text/plain'})});
- const chooseFiles=(selected:File[])=>{setFiles(selected);invalidate()};const runPreview=async()=>{setBusy(true);setError('');try{const response=await api.previewConfigs(targets());setPreview(response.items)}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}};
- const submit=async()=>{if(!preview.length){await runPreview();return}setBusy(true);setError('');try{const response=await api.importConfigs(targets(),name,overrides);if(response.errors?.length)setResult(response);else done()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}};
- const hasTargets=mode==='files'?files.length>0:validPasted.length>0;const needsChoice=preview.some(item=>item.needs_confirmation&&!overrides[item.source_file]);const disabled=busy||!hasTargets||!!result||(preview.length>0&&needsChoice);
- return <div className="modal-backdrop"><div className={`modal import-modal ${mode==='paste'?'paste-mode':''}`} role="dialog" aria-modal="true" aria-label="機器設定を解析"><div className="drawer-head"><div><small>CONFIG IMPORT</small><h2>機器設定を解析</h2></div><button className="icon" aria-label="Import画面を閉じる" title="閉じる" onClick={close}><X/></button></div><label className="field">Snapshot名<input value={name} onChange={e=>setName(e.target.value)}/></label><div className="import-tabs" role="tablist" aria-label="Import方法"><button role="tab" aria-selected={mode==='files'} className={mode==='files'?'active':''} onClick={()=>{setMode('files');invalidate()}}><Upload/>ファイル / フォルダ</button><button role="tab" aria-selected={mode==='paste'} className={mode==='paste'?'active':''} onClick={()=>{setMode('paste');invalidate()}}><ClipboardPaste/>機器ごとに貼り付け</button></div>{mode==='files'?<><label className="dropzone"><Upload/><b>ファイルを選択、またはドロップ</b><span>複数の .conf / .txt、または ZIP に対応</span><input aria-label="設定ファイルを選択" type="file" multiple onChange={e=>chooseFiles(Array.from(e.target.files||[]))}/>{files.length>0&&<em>{files.length} ファイル選択済み</em>}</label><label className="folder-picker"><Network/>フォルダ内のconfigをまとめて選択<input aria-label="設定フォルダを選択" type="file" multiple {...({webkitdirectory:''} as any)} onChange={e=>chooseFiles(Array.from(e.target.files||[]))}/></label></>:<div className="paste-configs"><div className="paste-guide"><ClipboardPaste/><span><b>機器1台につき1つの欄へconfigを貼り付け</b><small>Network OSとHostnameは設定内容から自動検出します。</small></span><button onClick={add}><Plus/>機器を追加</button></div>{pasted.map((row,index)=><article className="paste-card" key={row.id}><div className="paste-card-head"><span><Server/><b>機器 {index+1}</b></span><input aria-label={`機器 ${index+1} の設定名`} value={row.filename} onChange={e=>update(row.id,'filename',e.target.value)} placeholder="router01.conf"/>{pasted.length>1&&<button aria-label={`機器 ${index+1} を削除`} className="icon danger" onClick={()=>remove(row.id)}><Trash2/></button>}</div><textarea aria-label={`機器 ${index+1} のconfig`} value={row.content} onChange={e=>update(row.id,'content',e.target.value)} placeholder={'hostname router01\ninterface GigabitEthernet0/0\n ...'}/><small>{row.content.split('\n').length} lines · {row.content.length.toLocaleString()} chars</small></article>)}</div>}{preview.length>0&&<div className="import-preview"><div><b>解析プレビュー</b><small>信頼度が低いconfigはNetwork OSを選択してください。</small></div>{preview.map(item=><article className={item.needs_confirmation?'needs-confirmation':''} key={item.source_file}><FileCode2/><span><b>{item.source_file}</b><small>{item.detected?`${item.detected.parser_id} · ${Math.round(item.detected.confidence*100)}%`:'検出候補なし'}</small></span><select aria-label={`${item.source_file} のNetwork OS`} value={overrides[item.source_file]||''} onChange={e=>setOverrides(value=>({...value,[item.source_file]:e.target.value}))}><option value="">自動検出</option>{capabilities.map(cap=><option value={cap.parser_id} key={cap.parser_id}>{cap.label}</option>)}</select>{item.needs_confirmation&&!overrides[item.source_file]&&<AlertTriangle/>}</article>)}</div>}{result&&<div className="import-result"><Check/><div><b>{result.imported.length}台をImportしました</b><p>{result.errors.length}件は解析できませんでした。成功分はSnapshotに保存済みです。</p>{result.errors.map((item:any)=><small key={item.source_file}>{item.source_file}: {item.error}</small>)}</div></div>}{error&&<div className="import-error" role="alert"><AlertTriangle/>{error}</div>}<div className="modal-actions"><span>{preview.length?`${preview.length} configを確認済み`:mode==='paste'?`${validPasted.length} 台を検出`:`${files.length} ファイルを検出`}</span><button onClick={result?done:close}>{result?'完了':'キャンセル'}</button>{!result&&<button className="primary" disabled={disabled} onClick={submit}>{busy?<RefreshCw className="spin"/>:preview.length?<Upload/>:<Search/>}{busy?'処理中…':preview.length?'Import':'検出プレビュー'}</button>}</div></div></div>
+function Policies({ items }: { items: Policy[] }) {
+  const [query, setQuery] = useState("");
+  const [device, setDevice] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [networkOs, setNetworkOs] = useState("");
+  const [source, setSource] = useState("");
+  const [destination, setDestination] = useState("");
+  const [action, setAction] = useState("");
+  const [protocol, setProtocol] = useState("");
+  const [port, setPort] = useState("");
+  const [deviceItems, setDeviceItems] = useState<Device[]>([]);
+  useEffect(() => {
+    api
+      .devices()
+      .then((value) => setDeviceItems(value.items))
+      .catch(() => {});
+  }, []);
+  const deviceMap = Object.fromEntries(deviceItems.map((x) => [x.id, x]));
+  const devices = [...new Set(items.map((p) => p.device))].sort();
+  const vendors = [...new Set(deviceItems.map((x) => x.vendor))].sort();
+  const operatingSystems = [
+    ...new Set(deviceItems.map((x) => x.network_os)),
+  ].sort();
+  const protocols = [...new Set(items.flatMap((p) => p.protocol))].sort();
+  const rows = items.filter((p) => {
+    const owner = deviceMap[p.device];
+    const src = (p.from_zone || p.src.join(", ")).toLowerCase();
+    const dst = (p.to_zone || p.dst.join(", ")).toLowerCase();
+    return (
+      (!device || p.device === device) &&
+      (!vendor || owner?.vendor === vendor) &&
+      (!networkOs || owner?.network_os === networkOs) &&
+      (!source || src.includes(source.toLowerCase())) &&
+      (!destination || dst.includes(destination.toLowerCase())) &&
+      (!action || p.action === action) &&
+      (!protocol || p.protocol.includes(protocol)) &&
+      (!port || p.dst_ports.some((x) => x.includes(port))) &&
+      JSON.stringify(p).toLowerCase().includes(query.toLowerCase())
+    );
+  });
+  return (
+    <div className="panel">
+      <div className="toolbar policy-toolbar">
+        <div className="search">
+          <Search />
+          <input
+            aria-label="ポリシーを検索"
+            placeholder="ポリシー名を検索"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <label>
+          Device
+          <select
+            aria-label="ポリシーのデバイス"
+            value={device}
+            onChange={(e) => setDevice(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {devices.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Vendor
+          <select
+            aria-label="ポリシーのベンダー"
+            value={vendor}
+            onChange={(e) => setVendor(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {vendors.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          OS
+          <select
+            aria-label="ポリシーのOS"
+            value={networkOs}
+            onChange={(e) => setNetworkOs(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {operatingSystems.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Source
+          <input
+            aria-label="ポリシーの送信元"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            placeholder="any"
+          />
+        </label>
+        <label>
+          Destination
+          <input
+            aria-label="ポリシーの宛先"
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            placeholder="any"
+          />
+        </label>
+        <label>
+          Action
+          <select
+            aria-label="ポリシーのアクション"
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+          >
+            <option value="">ALL</option>
+            <option value="permit">ALLOW</option>
+            <option value="deny">DENY</option>
+            <option value="reject">REJECT</option>
+            <option value="restrict">RESTRICT</option>
+          </select>
+        </label>
+        <label>
+          Protocol
+          <select
+            aria-label="ポリシーのプロトコル"
+            value={protocol}
+            onChange={(e) => setProtocol(e.target.value)}
+          >
+            <option value="">ALL</option>
+            {protocols.map((x) => (
+              <option key={x}>{x.toUpperCase()}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Port
+          <input
+            aria-label="ポリシーのポート"
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="any"
+          />
+        </label>
+        <span className="result-count">
+          {rows.length} / {items.length} 件
+        </span>
+      </div>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>デバイス / ポリシー</th>
+              <th>送信元</th>
+              <th>宛先</th>
+              <th>プロトコル</th>
+              <th>ポート</th>
+              <th>アクション</th>
+              <th>根拠</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.id}>
+                <td>
+                  <b>{p.device}</b>
+                  <small>
+                    {p.name} · #{p.sequence}
+                  </small>
+                </td>
+                <td>{p.from_zone || p.src.join(", ")}</td>
+                <td>{p.to_zone || p.dst.join(", ")}</td>
+                <td>{p.protocol.join(", ").toUpperCase()}</td>
+                <td>
+                  <code>{p.dst_ports.join(", ")}</code>
+                </td>
+                <td>
+                  <Status value={p.action === "permit" ? "ALLOW" : "DENY"} />
+                </td>
+                <td>
+                  <small>
+                    {p.trace?.source_file}:{p.trace?.line_start}
+                  </small>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
-export default function App(){const[page,setPage]=useState('matrix');const[sidebarCollapsed,setSidebarCollapsed]=useState(()=>{const saved=localStorage.getItem('netpolicy-sidebar-collapsed');return saved===null?window.matchMedia('(max-width: 900px)').matches:saved==='1'});const[matrix,setMatrix]=useState<MatrixData>({snapshot_id:null,segments:[],cells:[]});const[devices,setDevices]=useState<Device[]>([]);const[policies,setPolicies]=useState<Policy[]>([]);const[caps,setCaps]=useState<Capability[]>([]);const[debug,setDebug]=useState<any[]>([]);const[snapshots,setSnapshots]=useState<Snapshot[]>([]);const[selected,setSelected]=useState<Cell|null>(null);const[selectedDevice,setSelectedDevice]=useState<Device|null>(null);const[dialog,setDialog]=useState(false);const[loading,setLoading]=useState(true);const[protocol,setProtocol]=useState('');const[port,setPort]=useState('');
- const refresh=async()=>{setLoading(true);try{const[m,d,p,c,g,s]=await Promise.all([api.matrix(protocol,port),api.devices(),api.policies(),api.capabilities(),api.debug(),api.snapshots()]);setMatrix(m);setDevices(d.items);setPolicies(p.items);setCaps(c);setDebug(g.items);setSnapshots(s)}catch{}finally{setLoading(false)}};useEffect(()=>{refresh()},[]);useEffect(()=>{const t=setTimeout(()=>api.matrix(protocol,port).then(setMatrix).catch(()=>{}),250);return()=>clearTimeout(t)},[protocol,port]);
- useEffect(()=>{localStorage.setItem('netpolicy-sidebar-collapsed',sidebarCollapsed?'1':'0');const app=document.querySelector('.app');const button=document.querySelector<HTMLButtonElement>('.mobile-menu');app?.classList.toggle('sidebar-collapsed',sidebarCollapsed);const label=sidebarCollapsed?'メニューを開く':'メニューを畳む';button?.setAttribute('aria-label',label);button?.setAttribute('title',label);const toggle=()=>setSidebarCollapsed(value=>!value);button?.addEventListener('click',toggle);return()=>button?.removeEventListener('click',toggle)},[sidebarCollapsed]);const loadSample=async()=>{await api.sample();await refresh()};const title=nav.find(n=>n[0]===page)?.[1];const stats=useMemo(()=>({allow:matrix.cells.filter(c=>c.result==='ALLOW').length,deny:matrix.cells.filter(c=>c.result==='DENY').length,unknown:matrix.cells.filter(c=>c.result==='UNKNOWN').length}),[matrix]);
- return <div className="app"><aside className="sidebar"><div className="brand"><div><Network/></div><span><b>NetPolicy</b><small>LENS</small></span></div><nav aria-label="メインナビゲーション">{nav.map(([id,label,Icon])=><button aria-current={page===id?'page':undefined} title={sidebarCollapsed?label:undefined} className={page===id?'active':''} onClick={()=>setPage(id)} key={id}><Icon/>{label}{id==='debug'&&<span className="beta">JSON</span>}</button>)}</nav><div className="side-foot"><span><Wifi/>ローカル解析</span><small>Configは外部送信されません</small><div className="version">v0.1.0 <i/> MVP</div></div></aside><main><header><div><button className="mobile-menu" aria-label="メニューを畳む" title="メニューを畳む"><Menu/></button><small>NETWORK ANALYSIS</small><h1>{title}</h1></div><div className="header-actions"><button onClick={()=>refresh()} className="icon" aria-label="データを再読み込み" title="再読み込み"><RefreshCw/></button><button className="primary" onClick={()=>setDialog(true)}><Plus/><span>Config Import</span></button></div></header>{page==='matrix'&&<><div className="overview"><div><span>Segments</span><b>{matrix.segments.length}</b><Network/></div><div><span>許可パス</span><b>{stats.allow}</b><Check/></div><div><span>拒否パス</span><b>{stats.deny}</b><ShieldCheck/></div><div><span>要確認</span><b>{stats.unknown}</b><CircleHelp/></div></div><div className="matrix-tools"><div><Filter/><b>表示条件</b></div><label>Protocol<select aria-label="プロトコル" value={protocol} onChange={e=>setProtocol(e.target.value)}><option value="">ALL</option><option>tcp</option><option>udp</option><option>icmp</option></select></label><label>Port<input aria-label="ポート" inputMode="numeric" value={port} onChange={e=>setPort(e.target.value)} placeholder="any"/></label><span className="snapshot"><Clock3/>{matrix.snapshot_id?'Latest snapshot':'No snapshot'}</span></div>{loading?<div className="loading"><RefreshCw className="spin"/>解析結果を読み込み中</div>:matrix.segments.length?<Matrix data={matrix} onCell={setSelected}/>:<Empty load={loadSample}/>}</>}{page==='topology'&&<TopologyView/>}{page==='diff'&&<SnapshotDiff snapshots={snapshots}/>} {page==='policies'&&<Policies items={policies}/>} {page==='devices'&&<Devices items={devices} onSelect={setSelectedDevice}/>} {page==='capabilities'&&<Capabilities items={caps}/>} {page==='debug'&&<Debug data={debug}/>}<footer className="main-footer"><span><Database/>SQLite snapshot</span><span><GitCompareArrows/>Snapshot diff active</span><span><Route/>Multi-hop path analysis</span></footer></main>{selected&&<><div className="shade" onClick={()=>setSelected(null)}/><Detail cell={selected} segments={matrix.segments} close={()=>setSelected(null)}/></>}{selectedDevice&&<><div className="shade" onClick={()=>setSelectedDevice(null)}/><DeviceDetailDrawer device={selectedDevice} close={()=>setSelectedDevice(null)}/></>}{dialog&&<ImportDialog close={()=>setDialog(false)} done={()=>{setDialog(false);refresh()}}/>}</div>}
+function Devices({
+  items,
+  onSelect,
+}: {
+  items: Device[];
+  onSelect: (device: Device) => void;
+}) {
+  return (
+    <div className="cards">
+      {items.map((d) => (
+        <article
+          className="device-card"
+          key={d.id}
+          role="button"
+          tabIndex={0}
+          onClick={() => onSelect(d)}
+          onKeyDown={(e) => e.key === "Enter" && onSelect(d)}
+        >
+          <div className={`vendor ${d.vendor}`}>
+            <Server />
+          </div>
+          <div className="device-title">
+            <div>
+              <h3>{d.hostname}</h3>
+              <p>
+                {d.site && <>{d.site.toUpperCase()} · </>}
+                {d.vendor.toUpperCase()} · {d.network_os.toUpperCase()}
+              </p>
+            </div>
+            <span className="confidence">
+              {Math.round(d.confidence * 100)}% 検出
+            </span>
+          </div>
+          <div className="device-stats">
+            <span>
+              <b>{d.counts.interfaces || 0}</b>Interfaces
+            </span>
+            <span>
+              <b>{d.counts.segments || 0}</b>Segments
+            </span>
+            <span>
+              <b>{d.counts.policies || 0}</b>Policies
+            </span>
+            <span>
+              <b>{d.counts.nat || 0}</b>NAT
+            </span>
+          </div>
+          <footer>
+            <FileCode2 />
+            {d.source_file}
+            <span
+              className={
+                d.counts.warnings || d.counts.unsupported
+                  ? "warning-dot"
+                  : "clean-dot"
+              }
+            />
+            {(d.counts.warnings || 0) + (d.counts.unsupported || 0)} issues
+            <ChevronRight />
+          </footer>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function WarningRows({
+  items,
+  kind,
+}: {
+  items: ParserWarning[];
+  kind: string;
+}) {
+  return items.length ? (
+    <div className="issue-list">
+      {items.map((item, index) => (
+        <article key={`${kind}:${item.line}:${index}`}>
+          <AlertTriangle />
+          <div>
+            <b>{item.reason}</b>
+            <code>{item.config}</code>
+            <small>
+              {item.parser} · line {item.line}
+            </small>
+          </div>
+        </article>
+      ))}
+    </div>
+  ) : (
+    <div className="detail-empty">
+      <Check />
+      該当項目はありません
+    </div>
+  );
+}
+function DeviceDetailDrawer({
+  device,
+  close,
+}: {
+  device: Device;
+  close: () => void;
+}) {
+  const [data, setData] = useState<DeviceDetail | null>(null);
+  const [tab, setTab] = useState("interfaces");
+  useEffect(() => {
+    api.device(device.id).then(setData);
+  }, [device.id]);
+  const sections = data
+    ? {
+        interfaces: data.interfaces,
+        vlans: data.vlans,
+        zones: data.zones,
+        segments: data.segments,
+        routes: data.routes,
+        policies: data.policies,
+        nat: data.nat,
+        address_objects: data.address_objects,
+        service_objects: data.service_objects,
+        warnings: data.warnings,
+        unsupported: data.unsupported,
+      }
+    : ({} as Record<string, any[]>);
+  const labels: Record<string, string> = {
+    interfaces: "Interfaces",
+    vlans: "VLANs",
+    zones: "Zones",
+    segments: "Segments",
+    routes: "Routes",
+    policies: "Policies",
+    nat: "NAT",
+    address_objects: "Addresses",
+    service_objects: "Services",
+    warnings: "Warnings",
+    unsupported: "Unsupported",
+  };
+  return (
+    <aside
+      className="drawer device-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${device.hostname}の詳細`}
+    >
+      <div className="drawer-head">
+        <div>
+          <small>DEVICE DETAIL</small>
+          <h2>
+            <Server />
+            {device.hostname}
+          </h2>
+          <p>
+            {device.site && `${device.site.toUpperCase()} · `}
+            {device.vendor.toUpperCase()} · {device.network_os.toUpperCase()} ·{" "}
+            {device.source_file}
+          </p>
+        </div>
+        <button
+          className="icon"
+          aria-label="デバイス詳細を閉じる"
+          title="閉じる"
+          onClick={close}
+        >
+          <X />
+        </button>
+      </div>
+      {!data ? (
+        <div className="loading drawer-loading">
+          <RefreshCw className="spin" />
+          詳細を読み込み中
+        </div>
+      ) : (
+        <>
+          <div className="device-detail-stats">
+            <span>
+              <b>{data.interfaces.length}</b>IF
+            </span>
+            <span>
+              <b>{data.segments.length}</b>Segments
+            </span>
+            <span>
+              <b>{data.routes.length}</b>Routes
+            </span>
+            <span>
+              <b>{data.policies.length}</b>Policies
+            </span>
+            <span>
+              <b>{data.nat.length}</b>NAT
+            </span>
+            <span
+              className={
+                data.warnings.length + data.unsupported.length
+                  ? "has-issues"
+                  : ""
+              }
+            >
+              <b>{data.warnings.length + data.unsupported.length}</b>Issues
+            </span>
+          </div>
+          <div className="detail-tabs">
+            {Object.keys(sections).map((key) => (
+              <button
+                className={tab === key ? "active" : ""}
+                onClick={() => setTab(key)}
+                key={key}
+              >
+                {labels[key]}
+                <span>{sections[key].length}</span>
+              </button>
+            ))}
+          </div>
+          <div className="detail-content">
+            {tab === "warnings" ? (
+              <WarningRows items={data.warnings} kind="warning" />
+            ) : tab === "unsupported" ? (
+              <WarningRows items={data.unsupported} kind="unsupported" />
+            ) : sections[tab]?.length ? (
+              <div className="object-list">
+                {sections[tab].map((item, index) => (
+                  <article key={item.id || item.name || index}>
+                    <div>
+                      <b>
+                        {item.name ||
+                          item.destination ||
+                          item.id ||
+                          `${labels[tab]} ${index + 1}`}
+                      </b>
+                      <small>
+                        {item.description ||
+                          item.action ||
+                          item.type ||
+                          item.interface ||
+                          ""}
+                      </small>
+                    </div>
+                    <pre>{JSON.stringify(item, null, 2)}</pre>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="detail-empty">
+                <Check />
+                {labels[tab]}はありません
+              </div>
+            )}
+          </div>
+          <p className="masked-note">
+            <ShieldCheck />
+            保存・表示されるPassword、Secret、SNMP
+            Communityは自動的にマスクされます。
+          </p>
+        </>
+      )}
+    </aside>
+  );
+}
+
+function Capabilities({ items }: { items: Capability[] }) {
+  const keys = [
+    ["interfaces", "IF"],
+    ["vlans", "VLAN"],
+    ["routes", "Route"],
+    ["acl", "ACL"],
+    ["zones", "Zone"],
+    ["firewall_policy", "Policy"],
+    ["nat", "NAT"],
+    ["ipv6", "IPv6"],
+  ] as const;
+  return (
+    <div className="panel">
+      <div className="callout">
+        <Activity />
+        <div>
+          <b>Parser Plugin Architecture</b>
+          <p>
+            新しいNetwork
+            OSはParserを登録するだけで、AnalyzerとUIへ自動的に反映されます。
+          </p>
+        </div>
+      </div>
+      <table className="data-table capability">
+        <thead>
+          <tr>
+            <th>Network OS</th>
+            {keys.map((k) => (
+              <th key={k[0]}>{k[1]}</th>
+            ))}
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((c) => (
+            <tr key={c.parser_id}>
+              <td>
+                <b>{c.label}</b>
+                <small>{c.parser_id}</small>
+              </td>
+              {keys.map(([k]) => (
+                <td key={k}>
+                  {c[k] ? (
+                    <Check className="yes" />
+                  ) : (
+                    <span className="dash">—</span>
+                  )}
+                </td>
+              ))}
+              <td>
+                <span className={`stage ${c.status}`}>
+                  {c.status === "available" ? "利用可能" : "予定"}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Debug({ data }: { data: any[] }) {
+  const [selected, setSelected] = useState(0);
+  const download = () => {
+    const item = data[selected];
+    if (!item) return;
+    const blob = new Blob([JSON.stringify(item, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${item.device.hostname}-canonical.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <div className="debug">
+      <div className="debug-list">
+        {data.map((x, i) => (
+          <button
+            className={i === selected ? "active" : ""}
+            onClick={() => setSelected(i)}
+            key={x.device.id}
+          >
+            <FileCode2 />
+            <span>
+              {x.device.hostname}
+              <small>{x.device.network_os}</small>
+            </span>
+            <ChevronRight />
+          </button>
+        ))}
+      </div>
+      <div className="debug-output">
+        <div>
+          <span>
+            <ShieldCheck />
+            Secretマスク済みCanonical JSON
+          </span>
+          <button onClick={download} disabled={!data.length}>
+            <Download />
+            JSON Export
+          </button>
+        </div>
+        <pre>
+          {data.length
+            ? JSON.stringify(data[selected], null, 2)
+            : "No parser output"}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+const changeLabel: Record<ObjectDiff["change"], string> = {
+  ADDED: "追加",
+  REMOVED: "削除",
+  CHANGED: "変更",
+};
+const valueText = (value: any) =>
+  Array.isArray(value) ? value.join(", ") : value == null ? "—" : String(value);
+function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
+  const [before, setBefore] = useState("");
+  const [after, setAfter] = useState("");
+  const [data, setData] = useState<DiffData | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (snapshots.length >= 2) {
+      setAfter((x) => x || snapshots[0].id);
+      setBefore((x) => x || snapshots[1].id);
+    }
+  }, [snapshots]);
+  useEffect(() => {
+    if (!before || !after || before === after) {
+      setData(null);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    api
+      .diff(before, after)
+      .then(setData)
+      .catch((e) => setError(String(e)))
+      .finally(() => setBusy(false));
+  }, [before, after]);
+  if (snapshots.length < 2)
+    return (
+      <div className="empty diff-empty">
+        <GitCompareArrows />
+        <h2>比較するSnapshotが足りません</h2>
+        <p>Config Importを2回以上実行すると、変更前後を比較できます。</p>
+      </div>
+    );
+  const risky = data?.communications.filter((x) => x.new_allow.length) || [];
+  const other = data?.communications.filter((x) => !x.new_allow.length) || [];
+  return (
+    <div className="diff-page">
+      <div className="diff-controls">
+        <div>
+          <small>BASELINE</small>
+          <label>
+            <select
+              aria-label="比較元Snapshot"
+              value={before}
+              onChange={(e) => setBefore(e.target.value)}
+            >
+              {snapshots.map((s) => (
+                <option value={s.id} key={s.id}>
+                  {s.name} · {new Date(s.created_at).toLocaleString("ja-JP")}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <ArrowRight />
+        <div>
+          <small>AFTER CHANGE</small>
+          <label>
+            <select
+              aria-label="比較先Snapshot"
+              value={after}
+              onChange={(e) => setAfter(e.target.value)}
+            >
+              {snapshots.map((s) => (
+                <option value={s.id} key={s.id}>
+                  {s.name} · {new Date(s.created_at).toLocaleString("ja-JP")}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {busy && <RefreshCw className="spin" />}
+      </div>
+      {before === after && (
+        <div className="diff-note">
+          <CircleHelp />
+          異なるSnapshotを選択してください。
+        </div>
+      )}
+      {error && (
+        <div className="diff-note error">
+          <AlertTriangle />
+          {error}
+        </div>
+      )}
+      {data && (
+        <>
+          <div className="diff-summary">
+            <article className="risk">
+              <span>新しく許可</span>
+              <b>{data.summary.new_allow}</b>
+              <AlertTriangle />
+              <small>要レビュー</small>
+            </article>
+            <article>
+              <span>新しく拒否</span>
+              <b>{data.summary.new_deny}</b>
+              <ShieldCheck />
+              <small>通信影響</small>
+            </article>
+            <article>
+              <span>変更ルール</span>
+              <b>{data.summary.changed_rules}</b>
+              <GitCompareArrows />
+              <small>
+                追加 {data.summary.added_rules} · 削除{" "}
+                {data.summary.removed_rules}
+              </small>
+            </article>
+            <article>
+              <span>Network変更</span>
+              <b>{data.summary.network_changes}</b>
+              <Network />
+              <small>IF / VLAN / Zone</small>
+            </article>
+          </div>
+          <section className="diff-section">
+            <div className="section-head">
+              <div>
+                <small>REACHABILITY CHANGES</small>
+                <h2>通信可否の変更</h2>
+              </div>
+              <span>{data.communications.length} changes</span>
+            </div>
+            {risky.length > 0 && (
+              <div className="risk-banner">
+                <AlertTriangle />
+                <div>
+                  <b>新しく許可された通信があります</b>
+                  <p>
+                    意図した変更か、Rule Traceと変更元configを確認してください。
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="diff-list">
+              {[...risky, ...other].map((row, i) => (
+                <article
+                  className={
+                    row.new_allow.length
+                      ? "comm-change new-allow"
+                      : "comm-change"
+                  }
+                  key={`${row.source}:${row.destination}:${i}`}
+                >
+                  <div className="comm-path">
+                    <span>
+                      <b>{row.source_label}</b>
+                      <small>{row.source_device}</small>
+                    </span>
+                    <ArrowRight />
+                    <span>
+                      <b>{row.destination_label}</b>
+                      <small>{row.destination_device}</small>
+                    </span>
+                  </div>
+                  <div className="result-shift">
+                    {row.before_result ? (
+                      <Status value={row.before_result} />
+                    ) : (
+                      <span>—</span>
+                    )}
+                    <ArrowRight />
+                    {row.after_result ? (
+                      <Status value={row.after_result} />
+                    ) : (
+                      <span>—</span>
+                    )}
+                  </div>
+                  <div className="service-deltas">
+                    {row.new_allow.map((x) => (
+                      <span className="delta allow" key={`a${x}`}>
+                        <Plus />
+                        ALLOW {x}
+                      </span>
+                    ))}
+                    {row.new_deny.map((x) => (
+                      <span className="delta deny" key={`d${x}`}>
+                        <Plus />
+                        DENY {x}
+                      </span>
+                    ))}
+                    {row.removed_allow.map((x) => (
+                      <span className="delta removed" key={`ra${x}`}>
+                        <Minus />
+                        ALLOW {x}
+                      </span>
+                    ))}
+                    {row.removed_deny.map((x) => (
+                      <span className="delta removed" key={`rd${x}`}>
+                        <Minus />
+                        DENY {x}
+                      </span>
+                    ))}
+                  </div>
+                  {row.after_traces[0]?.trace && (
+                    <code>
+                      {row.after_traces[0].trace.source_file}:
+                      {row.after_traces[0].trace.line_start}
+                    </code>
+                  )}
+                </article>
+              ))}
+              {!data.communications.length && (
+                <div className="diff-none">
+                  <Check />
+                  通信可否の変更はありません
+                </div>
+              )}
+            </div>
+          </section>
+          <section className="diff-section">
+            <div className="section-head">
+              <div>
+                <small>CANONICAL POLICY DIFF</small>
+                <h2>Policy変更</h2>
+              </div>
+              <span>{data.policies.length} changes</span>
+            </div>
+            <ObjectDiffTable items={data.policies} />
+          </section>
+          <section className="diff-section">
+            <div className="section-head">
+              <div>
+                <small>NETWORK STRUCTURE DIFF</small>
+                <h2>Interface / VLAN / Zone変更</h2>
+              </div>
+              <span>{data.network.length} changes</span>
+            </div>
+            <ObjectDiffTable items={data.network} />
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ObjectDiffTable({ items }: { items: ObjectDiff[] }) {
+  return items.length ? (
+    <div className="table-scroll">
+      <table className="data-table diff-table">
+        <thead>
+          <tr>
+            <th>変更</th>
+            <th>対象</th>
+            <th>変更フィールド</th>
+            <th>Before</th>
+            <th>After</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={`${item.kind}:${item.key}:${item.change}`}>
+              <td>
+                <span className={`change ${item.change.toLowerCase()}`}>
+                  {changeLabel[item.change]}
+                </span>
+              </td>
+              <td>
+                <b>{item.key}</b>
+                <small>{item.kind.toUpperCase()}</small>
+              </td>
+              <td>
+                {item.fields.length
+                  ? item.fields.map((x) => <code key={x.field}>{x.field}</code>)
+                  : "—"}
+              </td>
+              <td>
+                {item.fields.length ? (
+                  item.fields.map((x) => (
+                    <small key={x.field}>
+                      {x.field}: {valueText(x.before)}
+                    </small>
+                  ))
+                ) : (
+                  <small>{item.before?.name || item.before?.id || "—"}</small>
+                )}
+              </td>
+              <td>
+                {item.fields.length ? (
+                  item.fields.map((x) => (
+                    <small key={x.field}>
+                      {x.field}: {valueText(x.after)}
+                    </small>
+                  ))
+                ) : (
+                  <small>{item.after?.name || item.after?.id || "—"}</small>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <div className="diff-none">
+      <Check />
+      変更はありません
+    </div>
+  );
+}
+
+function TopologyView() {
+  const [data, setData] = useState<TopologyData | null>(null);
+  const [result, setResult] = useState<ReachabilityData | null>(null);
+  const [src, setSrc] = useState("");
+  const [dst, setDst] = useState("");
+  const [protocol, setProtocol] = useState("tcp");
+  const [port, setPort] = useState("443");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api
+      .topology()
+      .then((value: TopologyData) => {
+        setData(value);
+        const segments = value.nodes.filter((n) => n.type === "segment");
+        setSrc(segments[0]?.entity_id || "");
+        setDst(segments[1]?.entity_id || segments[0]?.entity_id || "");
+      })
+      .catch((e) => setError(String(e)));
+  }, []);
+  const analyze = async () => {
+    if (!src || !dst) return;
+    setBusy(true);
+    setError("");
+    try {
+      setResult(await api.reachability(src, dst, protocol, port));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!data)
+    return error ? (
+      <div className="empty error-state" role="alert">
+        <AlertTriangle />
+        <h2>Topologyを読み込めませんでした</h2>
+        <p>{error}</p>
+      </div>
+    ) : (
+      <div className="loading">
+        <RefreshCw className="spin" />
+        Topologyを生成中
+      </div>
+    );
+  const segments = data.nodes.filter((n) => n.type === "segment");
+  const devices = data.nodes.filter((n) => n.type === "device");
+  const segmentPositions = Object.fromEntries(
+    segments.map((n, i) => [n.id, { x: 90 + i * 150, y: 285 }]),
+  );
+  const positions: Record<string, { x: number; y: number }> = {
+    ...segmentPositions,
+  };
+  devices.forEach((n, i) => {
+    const owned = data.edges
+      .filter((e) => e.type === "owns" && e.source === n.id)
+      .map((e) => segmentPositions[e.target]?.x)
+      .filter(Boolean);
+    positions[n.id] = {
+      x: owned.length
+        ? owned.reduce((a, b) => a + b, 0) / owned.length
+        : 90 + i * 170,
+      y: 75,
+    };
+  });
+  const width = Math.max(1040, segments.length * 150 + 30);
+  const nodeById = Object.fromEntries(data.nodes.map((n) => [n.id, n]));
+  const pathSet = new Set(result?.path || []);
+  const optionLabel = (n: TopologyNode) =>
+    `${n.label} (${n.device || n.subtitle})`;
+  return (
+    <div className="topology-page">
+      <div className="topology-summary">
+        <article>
+          <Network />
+          <span>
+            Devices<b>{data.summary.devices}</b>
+          </span>
+        </article>
+        <article>
+          <LayoutGrid />
+          <span>
+            Segments<b>{data.summary.segments}</b>
+          </span>
+        </article>
+        <article>
+          <Wifi />
+          <span>
+            推定リンク<b>{data.summary.adjacencies}</b>
+          </span>
+        </article>
+        <div>
+          <b>Topology confidence</b>
+          <p>同一サブネットの機器間リンクは設定情報からの推定です。</p>
+        </div>
+      </div>
+      <section className="topology-panel">
+        <div className="section-head">
+          <div>
+            <small>CANONICAL TOPOLOGY</small>
+            <h2>Network graph</h2>
+          </div>
+          <div className="topology-legend">
+            <span>
+              <i className="exact" />
+              所有関係
+            </span>
+            <span>
+              <i className="inferred" />
+              推定接続
+            </span>
+          </div>
+        </div>
+        <div className="topology-canvas">
+          <svg viewBox={`0 0 ${width} 390`} style={{ width, height: 390 }}>
+            {data.edges.map((e) => {
+              const a = positions[e.source],
+                b = positions[e.target];
+              if (!a || !b) return null;
+              const active = pathSet.has(e.source) && pathSet.has(e.target);
+              return (
+                <g key={e.id}>
+                  <line
+                    className={`${e.type} ${active ? "path-active" : ""}`}
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                  />
+                  {e.type === "adjacent" && (
+                    <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 8}>
+                      {e.label}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+            {data.nodes.map((n) => {
+              const p = positions[n.id];
+              const active = pathSet.has(n.id);
+              return (
+                <g
+                  key={n.id}
+                  className={`topology-node ${n.type} ${active ? "path-active" : ""}`}
+                  transform={`translate(${p.x},${p.y})`}
+                >
+                  <rect x={-62} y={-27} width={124} height={54} rx={8} />
+                  {n.type === "device" ? (
+                    <Server x={-53} y={-9} />
+                  ) : (
+                    <Network x={-53} y={-9} />
+                  )}
+                  <text className="node-label" x={-29} y={-4}>
+                    {n.label.slice(0, 17)}
+                  </text>
+                  <text className="node-subtitle" x={-29} y={12}>
+                    {n.subtitle.slice(0, 21)}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      </section>
+      <section className="path-panel">
+        <div className="section-head">
+          <div>
+            <small>END-TO-END REACHABILITY</small>
+            <h2>Path trace</h2>
+          </div>
+          <Route />
+        </div>
+        <div className="path-controls">
+          <label>
+            Source
+            <select value={src} onChange={(e) => setSrc(e.target.value)}>
+              {segments.map((n) => (
+                <option key={n.id} value={n.entity_id}>
+                  {optionLabel(n)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ArrowRight />
+          <label>
+            Destination
+            <select value={dst} onChange={(e) => setDst(e.target.value)}>
+              {segments.map((n) => (
+                <option key={n.id} value={n.entity_id}>
+                  {optionLabel(n)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Protocol
+            <select
+              value={protocol}
+              onChange={(e) => setProtocol(e.target.value)}
+            >
+              <option>tcp</option>
+              <option>udp</option>
+              <option>icmp</option>
+            </select>
+          </label>
+          <label>
+            Port
+            <input
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+              placeholder="any"
+            />
+          </label>
+          <button className="primary" onClick={analyze} disabled={busy}>
+            {busy ? <RefreshCw className="spin" /> : <Route />}経路を解析
+          </button>
+        </div>
+        {error && (
+          <div className="diff-note error">
+            <AlertTriangle />
+            {error}
+          </div>
+        )}
+        {result && (
+          <div className="path-result">
+            <div className="path-verdict">
+              <Status value={result.result} />
+              <span>
+                {result.protocol.toUpperCase()}
+                {result.port ? ` / ${result.port}` : ""}
+              </span>
+              <small>設定ベースの静的推定結果</small>
+            </div>
+            {result.path.length > 0 ? (
+              <div className="path-chain">
+                {result.path.map((id, i) => (
+                  <span key={id}>
+                    <b>{nodeById[id]?.label || id}</b>
+                    <small>
+                      {nodeById[id]?.type === "device"
+                        ? "policy hop"
+                        : "segment"}
+                    </small>
+                    {i < result.path.length - 1 && <ArrowRight />}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="no-route">
+                <WifiOff />
+                <p>設定から到達可能な経路を構成できません。</p>
+              </div>
+            )}
+            <div className="hop-list">
+              {result.steps.map((step, i) => (
+                <article key={`${step.device}:${i}`}>
+                  <span className="hop-number">{i + 1}</span>
+                  <div>
+                    <small>HOP {i + 1}</small>
+                    <h3>
+                      {nodeById[`device:${step.device}`]?.label || step.device}
+                    </h3>
+                    <p>
+                      {nodeById[`segment:${step.ingress}`]?.label} →{" "}
+                      {nodeById[`segment:${step.egress}`]?.label}
+                    </p>
+                  </div>
+                  <div className="hop-reason">
+                    <b>{step.reason}</b>
+                    {step.trace && (
+                      <>
+                        <code>{step.trace.raw_config}</code>
+                        <small>
+                          {step.trace.source_file}:{step.trace.line_start}
+                        </small>
+                      </>
+                    )}
+                  </div>
+                  <Status value={step.result} />
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="topology-note">
+          <CircleHelp />
+          動的ルーティング、物理配線、稼働状態は含まれません。根拠不足はUNKNOWNとして扱います。
+        </p>
+      </section>
+    </div>
+  );
+}
+
+type PastedConfig = { id: number; filename: string; content: string };
+type ImportPreview = {
+  source_file: string;
+  detected: { parser_id: string; confidence: number } | null;
+  candidates: { parser_id: string; confidence: number }[];
+  needs_confirmation: boolean;
+};
+function ImportDialog({
+  close,
+  done,
+}: {
+  close: () => void;
+  done: () => void;
+}) {
+  const [mode, setMode] = useState<"files" | "paste">("files");
+  const [files, setFiles] = useState<File[]>([]);
+  const [name, setName] = useState(
+    `snapshot-${new Date().toISOString().slice(0, 10)}`,
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [pasted, setPasted] = useState<PastedConfig[]>([
+    { id: 1, filename: "device-1.conf", content: "" },
+  ]);
+  const [preview, setPreview] = useState<ImportPreview[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [sites, setSites] = useState<Record<string, string>>({});
+  const [capabilities, setCapabilities] = useState<Capability[]>([]);
+  const [result, setResult] = useState<any>(null);
+  useEffect(() => {
+    api
+      .capabilities()
+      .then((items: Capability[]) =>
+        setCapabilities(items.filter((x) => x.status === "available")),
+      )
+      .catch(() => {});
+  }, []);
+  const invalidate = () => {
+    setPreview([]);
+    setOverrides({});
+    setSites({});
+    setResult(null);
+  };
+  const update = (id: number, field: "filename" | "content", value: string) => {
+    setPasted((rows) =>
+      rows.map((row) => (row.id === id ? { ...row, [field]: value } : row)),
+    );
+    invalidate();
+  };
+  const add = () => {
+    setPasted((rows) => [
+      ...rows,
+      {
+        id: Math.max(0, ...rows.map((x) => x.id)) + 1,
+        filename: `device-${rows.length + 1}.conf`,
+        content: "",
+      },
+    ]);
+    invalidate();
+  };
+  const remove = (id: number) => {
+    setPasted((rows) => rows.filter((row) => row.id !== id));
+    invalidate();
+  };
+  const validPasted = pasted.filter((x) => x.content.trim());
+  const targets = () =>
+    mode === "files"
+      ? files
+      : validPasted.map((row, index) => {
+          let filename = row.filename.trim() || `device-${index + 1}.conf`;
+          if (!/\.[a-z0-9]+$/i.test(filename)) filename += `.conf`;
+          return new File([row.content], filename, { type: "text/plain" });
+        });
+  const chooseFiles = (selected: File[]) => {
+    setFiles(selected);
+    invalidate();
+  };
+  const runPreview = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await api.previewConfigs(targets());
+      setPreview(response.items);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const submit = async () => {
+    if (!preview.length) {
+      await runPreview();
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const response = await api.importConfigs(
+        targets(),
+        name,
+        overrides,
+        sites,
+      );
+      if (response.errors?.length) setResult(response);
+      else done();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const hasTargets =
+    mode === "files" ? files.length > 0 : validPasted.length > 0;
+  const needsChoice = preview.some(
+    (item) => item.needs_confirmation && !overrides[item.source_file],
+  );
+  const disabled =
+    busy || !hasTargets || !!result || (preview.length > 0 && needsChoice);
+  return (
+    <div className="modal-backdrop">
+      <div
+        className={`modal import-modal ${mode === "paste" ? "paste-mode" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="機器設定を解析"
+      >
+        <div className="drawer-head">
+          <div>
+            <small>CONFIG IMPORT</small>
+            <h2>機器設定を解析</h2>
+          </div>
+          <button
+            className="icon"
+            aria-label="Import画面を閉じる"
+            title="閉じる"
+            onClick={close}
+          >
+            <X />
+          </button>
+        </div>
+        <label className="field">
+          Snapshot名
+          <input value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <div className="import-tabs" role="tablist" aria-label="Import方法">
+          <button
+            role="tab"
+            aria-selected={mode === "files"}
+            className={mode === "files" ? "active" : ""}
+            onClick={() => {
+              setMode("files");
+              invalidate();
+            }}
+          >
+            <Upload />
+            ファイル / フォルダ
+          </button>
+          <button
+            role="tab"
+            aria-selected={mode === "paste"}
+            className={mode === "paste" ? "active" : ""}
+            onClick={() => {
+              setMode("paste");
+              invalidate();
+            }}
+          >
+            <ClipboardPaste />
+            機器ごとに貼り付け
+          </button>
+        </div>
+        {mode === "files" ? (
+          <>
+            <label className="dropzone">
+              <Upload />
+              <b>ファイルを選択、またはドロップ</b>
+              <span>複数の .conf / .txt、または ZIP に対応</span>
+              <input
+                aria-label="設定ファイルを選択"
+                type="file"
+                multiple
+                onChange={(e) => chooseFiles(Array.from(e.target.files || []))}
+              />
+              {files.length > 0 && <em>{files.length} ファイル選択済み</em>}
+            </label>
+            <label className="folder-picker">
+              <Network />
+              フォルダ内のconfigをまとめて選択
+              <input
+                aria-label="設定フォルダを選択"
+                type="file"
+                multiple
+                {...({ webkitdirectory: "" } as any)}
+                onChange={(e) => chooseFiles(Array.from(e.target.files || []))}
+              />
+            </label>
+          </>
+        ) : (
+          <div className="paste-configs">
+            <div className="paste-guide">
+              <ClipboardPaste />
+              <span>
+                <b>機器1台につき1つの欄へconfigを貼り付け</b>
+                <small>
+                  Network OSとHostnameは設定内容から自動検出します。
+                </small>
+              </span>
+              <button onClick={add}>
+                <Plus />
+                機器を追加
+              </button>
+            </div>
+            {pasted.map((row, index) => (
+              <article className="paste-card" key={row.id}>
+                <div className="paste-card-head">
+                  <span>
+                    <Server />
+                    <b>機器 {index + 1}</b>
+                  </span>
+                  <input
+                    aria-label={`機器 ${index + 1} の設定名`}
+                    value={row.filename}
+                    onChange={(e) => update(row.id, "filename", e.target.value)}
+                    placeholder="router01.conf"
+                  />
+                  {pasted.length > 1 && (
+                    <button
+                      aria-label={`機器 ${index + 1} を削除`}
+                      className="icon danger"
+                      onClick={() => remove(row.id)}
+                    >
+                      <Trash2 />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  aria-label={`機器 ${index + 1} のconfig`}
+                  value={row.content}
+                  onChange={(e) => update(row.id, "content", e.target.value)}
+                  placeholder={
+                    "hostname router01\ninterface GigabitEthernet0/0\n ..."
+                  }
+                />
+                <small>
+                  {row.content.split("\n").length} lines ·{" "}
+                  {row.content.length.toLocaleString()} chars
+                </small>
+              </article>
+            ))}
+          </div>
+        )}
+        {preview.length > 0 && (
+          <div className="import-preview">
+            <div>
+              <b>解析プレビュー</b>
+              <small>
+                Network OSを確認し、必要に応じてSite名を設定してください。
+              </small>
+            </div>
+            {preview.map((item) => (
+              <article
+                className={item.needs_confirmation ? "needs-confirmation" : ""}
+                key={item.source_file}
+              >
+                <FileCode2 />
+                <span>
+                  <b>{item.source_file}</b>
+                  <small>
+                    {item.detected
+                      ? `${item.detected.parser_id} · ${Math.round(item.detected.confidence * 100)}%`
+                      : "検出候補なし"}
+                  </small>
+                </span>
+                <select
+                  aria-label={`${item.source_file} のNetwork OS`}
+                  value={overrides[item.source_file] || ""}
+                  onChange={(e) =>
+                    setOverrides((value) => ({
+                      ...value,
+                      [item.source_file]: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">自動検出</option>
+                  {capabilities.map((cap) => (
+                    <option value={cap.parser_id} key={cap.parser_id}>
+                      {cap.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="site-input"
+                  aria-label={`${item.source_file} のSite`}
+                  placeholder="Site（任意）"
+                  value={sites[item.source_file] || ""}
+                  onChange={(e) =>
+                    setSites((value) => ({
+                      ...value,
+                      [item.source_file]: e.target.value,
+                    }))
+                  }
+                />
+                {item.needs_confirmation && !overrides[item.source_file] && (
+                  <AlertTriangle />
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+        {result && (
+          <div className="import-result">
+            <Check />
+            <div>
+              <b>{result.imported.length}台をImportしました</b>
+              <p>
+                {result.errors.length}
+                件は解析できませんでした。成功分はSnapshotに保存済みです。
+              </p>
+              {result.errors.map((item: any) => (
+                <small key={item.source_file}>
+                  {item.source_file}: {item.error}
+                </small>
+              ))}
+            </div>
+          </div>
+        )}
+        {error && (
+          <div className="import-error" role="alert">
+            <AlertTriangle />
+            {error}
+          </div>
+        )}
+        <div className="modal-actions">
+          <span>
+            {preview.length
+              ? `${preview.length} configを確認済み`
+              : mode === "paste"
+                ? `${validPasted.length} 台を検出`
+                : `${files.length} ファイルを検出`}
+          </span>
+          <button onClick={result ? done : close}>
+            {result ? "完了" : "キャンセル"}
+          </button>
+          {!result && (
+            <button className="primary" disabled={disabled} onClick={submit}>
+              {busy ? (
+                <RefreshCw className="spin" />
+              ) : preview.length ? (
+                <Upload />
+              ) : (
+                <Search />
+              )}
+              {busy ? "処理中…" : preview.length ? "Import" : "検出プレビュー"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [page, setPage] = useState("matrix");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem("netpolicy-sidebar-collapsed");
+    return saved === null
+      ? window.matchMedia("(max-width: 900px)").matches
+      : saved === "1";
+  });
+  const [matrix, setMatrix] = useState<MatrixData>({
+    snapshot_id: null,
+    segments: [],
+    cells: [],
+  });
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [caps, setCaps] = useState<Capability[]>([]);
+  const [debug, setDebug] = useState<any[]>([]);
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [selected, setSelected] = useState<Cell | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [dialog, setDialog] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [protocol, setProtocol] = useState("");
+  const [port, setPort] = useState("");
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const [m, d, p, c, g, s] = await Promise.all([
+        api.matrix(protocol, port),
+        api.devices(),
+        api.policies(),
+        api.capabilities(),
+        api.debug(),
+        api.snapshots(),
+      ]);
+      setMatrix(m);
+      setDevices(d.items);
+      setPolicies(p.items);
+      setCaps(c);
+      setDebug(g.items);
+      setSnapshots(s);
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    refresh();
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(
+      () =>
+        api
+          .matrix(protocol, port)
+          .then(setMatrix)
+          .catch(() => {}),
+      250,
+    );
+    return () => clearTimeout(t);
+  }, [protocol, port]);
+  useEffect(() => {
+    localStorage.setItem(
+      "netpolicy-sidebar-collapsed",
+      sidebarCollapsed ? "1" : "0",
+    );
+    const app = document.querySelector(".app");
+    const button = document.querySelector<HTMLButtonElement>(".mobile-menu");
+    app?.classList.toggle("sidebar-collapsed", sidebarCollapsed);
+    const label = sidebarCollapsed ? "メニューを開く" : "メニューを畳む";
+    button?.setAttribute("aria-label", label);
+    button?.setAttribute("title", label);
+    const toggle = () => setSidebarCollapsed((value) => !value);
+    button?.addEventListener("click", toggle);
+    return () => button?.removeEventListener("click", toggle);
+  }, [sidebarCollapsed]);
+  const loadSample = async () => {
+    await api.sample();
+    await refresh();
+  };
+  const title = nav.find((n) => n[0] === page)?.[1];
+  const stats = useMemo(
+    () => ({
+      allow: matrix.cells.filter((c) => c.result === "ALLOW").length,
+      deny: matrix.cells.filter((c) => c.result === "DENY").length,
+      unknown: matrix.cells.filter((c) => c.result === "UNKNOWN").length,
+    }),
+    [matrix],
+  );
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <div>
+            <Network />
+          </div>
+          <span>
+            <b>NetPolicy</b>
+            <small>LENS</small>
+          </span>
+        </div>
+        <nav aria-label="メインナビゲーション">
+          {nav.map(([id, label, Icon]) => (
+            <button
+              aria-current={page === id ? "page" : undefined}
+              title={sidebarCollapsed ? label : undefined}
+              className={page === id ? "active" : ""}
+              onClick={() => setPage(id)}
+              key={id}
+            >
+              <Icon />
+              {label}
+              {id === "debug" && <span className="beta">JSON</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="side-foot">
+          <span>
+            <Wifi />
+            ローカル解析
+          </span>
+          <small>Configは外部送信されません</small>
+          <div className="version">
+            v0.1.0 <i /> MVP
+          </div>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <button
+              className="mobile-menu"
+              aria-label="メニューを畳む"
+              title="メニューを畳む"
+            >
+              <Menu />
+            </button>
+            <small>NETWORK ANALYSIS</small>
+            <h1>{title}</h1>
+          </div>
+          <div className="header-actions">
+            <button
+              onClick={() => refresh()}
+              className="icon"
+              aria-label="データを再読み込み"
+              title="再読み込み"
+            >
+              <RefreshCw />
+            </button>
+            <button className="primary" onClick={() => setDialog(true)}>
+              <Plus />
+              <span>Config Import</span>
+            </button>
+          </div>
+        </header>
+        {page === "matrix" && (
+          <>
+            <div className="overview">
+              <div>
+                <span>Segments</span>
+                <b>{matrix.segments.length}</b>
+                <Network />
+              </div>
+              <div>
+                <span>許可パス</span>
+                <b>{stats.allow}</b>
+                <Check />
+              </div>
+              <div>
+                <span>拒否パス</span>
+                <b>{stats.deny}</b>
+                <ShieldCheck />
+              </div>
+              <div>
+                <span>要確認</span>
+                <b>{stats.unknown}</b>
+                <CircleHelp />
+              </div>
+            </div>
+            <div className="matrix-tools">
+              <div>
+                <Filter />
+                <b>表示条件</b>
+              </div>
+              <label>
+                Protocol
+                <select
+                  aria-label="プロトコル"
+                  value={protocol}
+                  onChange={(e) => setProtocol(e.target.value)}
+                >
+                  <option value="">ALL</option>
+                  <option>tcp</option>
+                  <option>udp</option>
+                  <option>icmp</option>
+                </select>
+              </label>
+              <label>
+                Port
+                <input
+                  aria-label="ポート"
+                  inputMode="numeric"
+                  value={port}
+                  onChange={(e) => setPort(e.target.value)}
+                  placeholder="any"
+                />
+              </label>
+              <span className="snapshot">
+                <Clock3 />
+                {matrix.snapshot_id ? "Latest snapshot" : "No snapshot"}
+              </span>
+            </div>
+            {loading ? (
+              <div className="loading">
+                <RefreshCw className="spin" />
+                解析結果を読み込み中
+              </div>
+            ) : matrix.segments.length ? (
+              <Matrix data={matrix} onCell={setSelected} />
+            ) : (
+              <Empty load={loadSample} />
+            )}
+          </>
+        )}
+        {page === "topology" && <TopologyView />}
+        {page === "diff" && <SnapshotDiff snapshots={snapshots} />}{" "}
+        {page === "policies" && <Policies items={policies} />}{" "}
+        {page === "devices" && (
+          <Devices items={devices} onSelect={setSelectedDevice} />
+        )}{" "}
+        {page === "capabilities" && <Capabilities items={caps} />}{" "}
+        {page === "debug" && <Debug data={debug} />}
+        <footer className="main-footer">
+          <span>
+            <Database />
+            SQLite snapshot
+          </span>
+          <span>
+            <GitCompareArrows />
+            Snapshot diff active
+          </span>
+          <span>
+            <Route />
+            Multi-hop path analysis
+          </span>
+        </footer>
+      </main>
+      {selected && (
+        <>
+          <div className="shade" onClick={() => setSelected(null)} />
+          <Detail
+            cell={selected}
+            segments={matrix.segments}
+            close={() => setSelected(null)}
+          />
+        </>
+      )}
+      {selectedDevice && (
+        <>
+          <div className="shade" onClick={() => setSelectedDevice(null)} />
+          <DeviceDetailDrawer
+            device={selectedDevice}
+            close={() => setSelectedDevice(null)}
+          />
+        </>
+      )}
+      {dialog && (
+        <ImportDialog
+          close={() => setDialog(false)}
+          done={() => {
+            setDialog(false);
+            refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
