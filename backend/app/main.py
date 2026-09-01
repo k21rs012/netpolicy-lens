@@ -18,19 +18,34 @@ from .topology import analyze_reachability, build_topology
 app = FastAPI(title="NetPolicy Lens API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://localhost:8080"], allow_methods=["*"], allow_headers=["*"])
 store = SnapshotStore()
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 50 * 1024 * 1024
+MAX_CONFIG_FILES = 500
 
 
 def _items_from_uploads(files: list[UploadFile]) -> list[tuple[str, str]]:
     items: list[tuple[str, str]] = []
     for upload in files:
-        data = upload.file.read()
+        data = upload.file.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"{upload.filename or 'upload'} exceeds the 20 MiB upload limit")
         if upload.filename and upload.filename.lower().endswith(".zip"):
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                for info in archive.infolist():
-                    if not info.is_dir() and not info.filename.startswith("__MACOSX/"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                    members = [info for info in archive.infolist()
+                               if not info.is_dir() and not info.filename.startswith("__MACOSX/")]
+                    if len(items) + len(members) > MAX_CONFIG_FILES:
+                        raise HTTPException(413, f"archive exceeds the {MAX_CONFIG_FILES} file limit")
+                    if sum(info.file_size for info in members) > MAX_ARCHIVE_BYTES:
+                        raise HTTPException(413, "archive exceeds the 50 MiB expanded-size limit")
+                    for info in members:
                         items.append((info.filename, archive.read(info).decode("utf-8", errors="replace")))
+            except zipfile.BadZipFile as exc:
+                raise HTTPException(422, f"invalid ZIP file: {upload.filename}") from exc
         else:
             items.append((upload.filename or "uploaded.conf", data.decode("utf-8", errors="replace")))
+        if len(items) > MAX_CONFIG_FILES:
+            raise HTTPException(413, f"import exceeds the {MAX_CONFIG_FILES} file limit")
     return items
 
 

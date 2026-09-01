@@ -10,13 +10,27 @@
 docker compose up -d --build
 ```
 
-[http://localhost:8080](http://localhost:8080) を開き、「サンプルで始める」を選択します。単一・複数configまたはZIPは右上の **Config Import** から読み込めます。「機器ごとに貼り付け」を選ぶと、機器単位の入力欄を追加してconfigを直接貼り付け、一括で1つのSnapshotとして解析できます。設定はローカルのSQLiteにのみ保存されます。
+[http://localhost:8080](http://localhost:8080) を開き、「サンプルで始める」を選択します。単一・複数config、フォルダ、ZIPは右上の **Config Import** から読み込めます。「機器ごとに貼り付け」を選ぶと、機器単位の入力欄を追加してconfigを直接貼り付けられます。Import前にNetwork OSと検出信頼度を確認でき、信頼度が低いconfigは機器ごとにOSを指定します。設定はローカルのSQLiteにのみ保存されます。
+
+## 対応状況
+
+| Network OS | IF | VLAN | Route | ACL | Zone | Policy | NAT | IPv6 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Cisco IOS / IOS-XE | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| Juniper Junos / SRX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Yamaha RTX | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| Fortinet FortiOS | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Palo Alto PAN-OS | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
+| HPE Aruba AOS-CX | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
+| Arista EOS | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
+| AlliedWare Plus | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
+| VyOS | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ## 実装済み
 
-- Cisco IOS / IOS-XE: Interface、VLAN、IPv4/IPv6 address、IPv4/IPv6 ACL、ACL binding、static route
-- Juniper Junos / SRX: set形式・階層形式、Interface、Zone、Address Book、Security Policy、静的Route、定義済み/独自application解決
-- Yamaha RTX: Interface、VLAN、IPv4/IPv6 Filter、Filter binding、static route
+- Cisco IOS / IOS-XE: Interface、VLAN、IPv4/IPv6 address、IPv4/IPv6 ACL、ACL binding、static route、static/PAT NAT
+- Juniper Junos / SRX: set形式・階層形式、Interface、VLAN、Zone、Address Book/Set、Security Policy、静的Route、source/destination/static NAT、定義済み/独自application解決
+- Yamaha RTX: Interface、802.1Q VLAN、IPv4/IPv6 Filter、Filter binding、static route、NAT descriptor
 - Fortinet FortiOS / FortiGate: Interface、VLAN、Zone、Address/Service Object・Group、Firewall Policy、static route、Policy NAT
 - Palo Alto PAN-OS: set形式（vsys scope対応）、Interface、Zone、Address/Service Object・Group、Security Policy、Application解決、static route、NAT Policy
 - HPE Aruba AOS-CX: Interface、VLAN/SVI、IPv4/IPv6 ACL、`apply access-list` binding、static route
@@ -35,8 +49,10 @@ docker compose up -d --build
 - Device・SegmentのTopology Graph（同一サブネット接続は `INFERRED` と明示）
 - Source / Destination / Protocol / Port指定の複数機器Path探索とhop単位Policy trace
 - 経路なしを `NO_ROUTE`、Policy根拠不足を `UNKNOWN` として分離
-- 複数ファイル・ZIP import、機器ごとのconfig貼り付けImport
-- Docker Compose、Parser unit test、Golden Test、API end-to-end test
+- 複数ファイル・フォルダ・ZIP import、機器ごとのconfig貼り付け、検出プレビュー、OS手動補正、部分失敗表示
+- Device/Vendor/OS/Zone/VLAN/Segment/Protocol/Port Matrix filterとPolicy filter
+- Secretマスク済みCanonical JSON Export
+- Docker Compose、全9パーサーGolden Test、API end-to-end test、GitHub Actions CI
 
 NX-OS / ASA / ExtremeXOSなどの追加Parser、物理・動的経路情報の取込、Batfish連携は拡張対象です。UIのCapability Matrixでは予定機能を「予定」と区別します。
 
@@ -91,6 +107,7 @@ Vite: [http://localhost:5173](http://localhost:5173)、API docs: [http://localho
 |---|---|---|
 | POST | `/api/configs/import` | Config / ZIP import |
 | POST | `/api/configs/detect` | Network OS検出候補 |
+| POST | `/api/configs/preview` | 複数Configの検出プレビュー |
 | GET | `/api/devices` | Device一覧 |
 | GET | `/api/devices/{id}` | Canonical device detail |
 | GET | `/api/policies` | 共通Policy一覧 |
@@ -134,7 +151,8 @@ npm run build
 - Topologyの機器間リンクは設定内サブネットの重複から推定し、物理配線を保証しません。
 - 現MVPはstateful behavior、dynamic routing、NAT後の完全な到達性を再現しません。
 - 未解決オブジェクトや適用関係が曖昧な場合は `UNKNOWN` を優先します。
-- Password / Secret / SNMP CommunityはSnapshot保存前にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
-- RBACと元configへのアクセス権分離は次の実装対象です。
+- Password / Secret / SNMP CommunityはSnapshot保存前とJSON Export時にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
+- 認証・RBACは未実装です。Composeは`127.0.0.1:8080`だけにbindします。リモート公開時は認証付きReverse Proxyを必須としてください。詳細は[SECURITY.md](SECURITY.md)を参照してください。
+- Uploadは1ファイル20 MiB、1回500ファイル、ZIP展開後50 MiBに制限しています。
 
-License: Apache-2.0を想定（公開時に`LICENSE`を追加してください）。
+Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。

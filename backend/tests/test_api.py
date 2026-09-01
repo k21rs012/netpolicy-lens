@@ -88,3 +88,13 @@ def test_import_reports_partial_failures_without_dropping_success(tmp_path: Path
     assert len(body["imported"]) == 1
     assert body["errors"][0]["source_file"] == "bad.conf"
     assert [item["status"] for item in body["results"]] == ["imported", "error"]
+
+
+def test_import_rejects_invalid_zip_and_oversized_upload(monkeypatch):
+    client = TestClient(main.app)
+    invalid = client.post("/api/configs/preview", files=[("files", ("bad.zip", b"not-a-zip", "application/zip"))])
+    assert invalid.status_code == 422
+
+    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 4)
+    oversized = client.post("/api/configs/preview", files=[("files", ("large.conf", b"12345", "text/plain"))])
+    assert oversized.status_code == 413
