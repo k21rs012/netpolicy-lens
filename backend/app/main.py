@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from datetime import datetime
 
@@ -57,19 +58,44 @@ async def detect(file: UploadFile = File(...)):
     return [{"parser_id": x.parser_id, "confidence": round(x.confidence, 2)} for x in ParserRegistry.detect(text)]
 
 
+@app.post("/api/configs/preview")
+def preview_configs(files: list[UploadFile] = File(...)):
+    items = []
+    for filename, raw in _items_from_uploads(files):
+        ranked = ParserRegistry.detect(raw)
+        candidates = [{"parser_id": item.parser_id, "confidence": round(item.confidence, 2)}
+                      for item in ranked[:3]]
+        items.append({"source_file": filename, "detected": candidates[0] if candidates else None,
+                      "candidates": candidates, "needs_confirmation": not candidates or candidates[0]["confidence"] < 0.5})
+    return {"items": items}
+
+
 @app.post("/api/configs/import")
-def import_configs(files: list[UploadFile] = File(...), snapshot_name: str | None = Form(None), parser_id: str | None = Form(None)):
+def import_configs(files: list[UploadFile] = File(...), snapshot_name: str | None = Form(None),
+                   parser_id: str | None = Form(None), parser_ids: str | None = Form(None)):
+    try:
+        overrides = json.loads(parser_ids) if parser_ids else {}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(422, "parser_ids must be a JSON object") from exc
+    if not isinstance(overrides, dict):
+        raise HTTPException(422, "parser_ids must be a JSON object")
     parsed = []
     errors = []
+    results = []
     for filename, raw in _items_from_uploads(files):
         try:
-            cfg, ranked = ParserRegistry.parse(raw, filename, parser_id)
+            selected_parser = overrides.get(filename) or parser_id
+            cfg, ranked = ParserRegistry.parse(raw, filename, selected_parser)
             parsed.append((filename, raw, cfg))
+            results.append({"source_file": filename, "status": "imported", "parser_id": selected_parser or ranked[0].parser_id,
+                            "confidence": cfg.device.confidence, "hostname": cfg.device.hostname})
         except Exception as exc:
             errors.append({"source_file": filename, "error": str(exc)})
+            results.append({"source_file": filename, "status": "error", "error": str(exc)})
     if not parsed: raise HTTPException(422, detail={"message": "解析できる設定がありません", "errors": errors})
     snapshot_id = store.create(snapshot_name or f"import-{datetime.now().strftime('%Y%m%d-%H%M%S')}", parsed)
-    return {"snapshot_id": snapshot_id, "imported": [cfg.device.model_dump() for _, _, cfg in parsed], "errors": errors}
+    return {"snapshot_id": snapshot_id, "imported": [cfg.device.model_dump() for _, _, cfg in parsed],
+            "errors": errors, "results": results}
 
 
 @app.post("/api/sample/load")

@@ -39,7 +39,7 @@ class ParserRegistry:
         else:
             parser = ranked[0].parser if ranked else None
             confidence = ranked[0].confidence if ranked else 0
-        if parser is None or confidence < 0.25:
+        if parser is None or (not parser_id and confidence < 0.25):
             raise ValueError("Network OSを特定できません。Network OSを指定してください。")
         result = parser(config, source_file).parse()
         result.device.confidence = round(confidence, 2)

@@ -7,5 +7,6 @@ export const api={
  diff:(before:string,after:string)=>json<any>(`/api/diff?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}`),
  topology:()=>json<any>('/api/topology'),
  reachability:(src:string,dst:string,protocol:string,port:string)=>json<any>(`/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}`),
- importConfigs:(files:File[],name:string)=>{const form=new FormData();files.forEach(f=>form.append('files',f));form.append('snapshot_name',name);return json<any>('/api/configs/import',{method:'POST',body:form})}
+ previewConfigs:(files:File[])=>{const form=new FormData();files.forEach(f=>form.append('files',f));return json<any>('/api/configs/preview',{method:'POST',body:form})},
+ importConfigs:(files:File[],name:string,parserIds:Record<string,string>={})=>{const form=new FormData();files.forEach(f=>form.append('files',f));form.append('snapshot_name',name);form.append('parser_ids',JSON.stringify(parserIds));return json<any>('/api/configs/import',{method:'POST',body:form})}
 }

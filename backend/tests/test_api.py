@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from fastapi.testclient import TestClient
 
@@ -49,3 +50,41 @@ def test_import_multiple_pasted_device_configs_as_one_snapshot(tmp_path: Path):
     snapshots = client.get("/api/snapshots").json()
     assert snapshots[0]["name"] == "pasted-devices"
     assert snapshots[0]["device_count"] == 2
+
+
+def test_preview_and_per_file_parser_override(tmp_path: Path):
+    main.store = SnapshotStore(str(tmp_path / "preview.db"))
+    client = TestClient(main.app)
+    files = [
+        ("files", ("known.conf", SAMPLES["cisco01.conf"], "text/plain")),
+        ("files", ("manual.conf", "hostname manual-only\n", "text/plain")),
+    ]
+    preview = client.post("/api/configs/preview", files=files)
+    assert preview.status_code == 200
+    assert preview.json()["items"][0]["detected"]["parser_id"] in ("cisco_ios", "cisco_iosxe")
+    assert preview.json()["items"][1]["needs_confirmation"] is True
+
+    response = client.post(
+        "/api/configs/import",
+        data={"parser_ids": json.dumps({"manual.conf": "cisco_ios"})},
+        files=files,
+    )
+    assert response.status_code == 200
+    assert len(response.json()["imported"]) == 2
+    assert response.json()["results"][1]["parser_id"] == "cisco_ios"
+
+
+def test_import_reports_partial_failures_without_dropping_success(tmp_path: Path):
+    main.store = SnapshotStore(str(tmp_path / "partial.db"))
+    response = TestClient(main.app).post(
+        "/api/configs/import",
+        files=[
+            ("files", ("good.conf", SAMPLES["rtx01.conf"], "text/plain")),
+            ("files", ("bad.conf", "this is not a network config", "text/plain")),
+        ],
+    )
+    body = response.json()
+    assert response.status_code == 200
+    assert len(body["imported"]) == 1
+    assert body["errors"][0]["source_file"] == "bad.conf"
+    assert [item["status"] for item in body["results"]] == ["imported", "error"]
