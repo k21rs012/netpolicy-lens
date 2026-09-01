@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 
-from ..models import CanonicalConfig, Device, Interface, ParserCapabilities, ParserWarning, Policy, Route, Segment, VLAN
+from ..models import CanonicalConfig, Device, Interface, NATRule, ParserCapabilities, ParserWarning, Policy, Route, Segment, VLAN
 from .base import BaseConfigParser
 from .common import hostname_from, interface_networks, mask_to_prefix, slug, wildcard_to_network
 from .registry import ParserRegistry
@@ -47,6 +47,7 @@ class CiscoBaseParser(BaseConfigParser):
         interfaces: list[Interface] = []
         vlans: list[VLAN] = []
         routes: list[Route] = []
+        nat_rules: list[NATRule] = []
         policies: list[Policy] = []
         warnings: list[ParserWarning] = []
         current_if: Interface | None = None
@@ -99,6 +100,19 @@ class CiscoBaseParser(BaseConfigParser):
                 try: dest = str(ipaddress.ip_network(f"{match.group(1)}/{match.group(2)}", strict=False))
                 except ValueError: dest = match.group(1)
                 routes.append(Route(device=device.id, destination=dest, next_hop=match.group(3), trace=self.trace(number, raw)))
+                continue
+            if match := re.match(r"ip nat inside source static (tcp|udp) (\S+) (\d+) (\S+) (\d+)", line):
+                nat_rules.append(NATRule(device=device.id, name=f"static-{number}", type="source",
+                    original_src=match.group(2), translated_src=match.group(4), protocol=match.group(1),
+                    original_port=int(match.group(3)), translated_port=int(match.group(5)), trace=self.trace(number, raw)))
+                continue
+            if match := re.match(r"ip nat inside source static (\S+) (\S+)", line):
+                nat_rules.append(NATRule(device=device.id, name=f"static-{number}", type="source",
+                    original_src=match.group(1), translated_src=match.group(2), trace=self.trace(number, raw)))
+                continue
+            if match := re.match(r"ip nat inside source (?:list|route-map) (\S+) interface (\S+) overload", line):
+                nat_rules.append(NATRule(device=device.id, name=f"overload-{match.group(1)}", type="source",
+                    original_src=match.group(1), translated_src=f"interface:{match.group(2)}", trace=self.trace(number, raw)))
 
         segments: list[Segment] = []
         for vlan in vlans:
@@ -120,7 +134,8 @@ class CiscoBaseParser(BaseConfigParser):
             if policy.name in bindings:
                 policy.interface, policy.direction, seg = bindings[policy.name]
                 if seg: policy.src_segments = [seg] if policy.direction == "in" else policy.src_segments
-        return CanonicalConfig(device=device, interfaces=interfaces, vlans=vlans, segments=segments, routes=routes, policies=policies, warnings=warnings)
+        return CanonicalConfig(device=device, interfaces=interfaces, vlans=vlans, segments=segments,
+            routes=routes, policies=policies, nat=nat_rules, warnings=warnings)
 
     def _parse_acl_rule(self, device: str, acl: str, line: str, number: int, previous: int) -> Policy | None:
         tokens = line.split(); pos = 0

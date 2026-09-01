@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from ..models import (
     AddressObject, CanonicalConfig, Device, Interface, NATRule, ParserCapabilities,
-    ParserWarning, Policy, Route, Segment, ServiceObject, Zone,
+    ParserWarning, Policy, Route, Segment, ServiceObject, VLAN, Zone,
 )
 from .base import BaseConfigParser
 from .common import interface_networks, slug
@@ -63,6 +63,7 @@ class PANOSParser(BaseConfigParser):
         device = Device(id=device_id, hostname=hostname, vendor="paloalto", network_os="panos",
                         platform="PA-Series", source_file=self.source_file)
         interfaces: dict[str, Interface] = {}
+        vlan_ids: dict[str, int] = {}
         zone_members: dict[str, list[str]] = defaultdict(list)
         address_values: dict[str, list[str]] = {"any": ["any"]}
         address_objects: list[AddressObject] = []
@@ -79,7 +80,16 @@ class PANOSParser(BaseConfigParser):
 
         for number, raw in enumerate(self.lines, 1):
             line = raw.strip()
-            if match := re.match(r"set network interface (?:ethernet|aggregate-ethernet|loopback|vlan) (\S+)(?: layer3)? (?:units (\S+) )?ip (\S+)", line):
+            if match := re.match(r"set network interface (?:ethernet|aggregate-ethernet) \S+ layer3 units (\S+) tag (\d+)", line):
+                name = match.group(1); vlan_ids[name] = int(match.group(2))
+                interfaces.setdefault(name, Interface(device=device_id, name=name, vlan_id=int(match.group(2)), trace=self.trace(number, raw)))
+            elif match := re.match(r"set network interface vlan units (\S+) tag (\d+)", line):
+                name = match.group(1); vlan_ids[name] = int(match.group(2))
+                interfaces.setdefault(name, Interface(device=device_id, name=name, vlan_id=int(match.group(2)), trace=self.trace(number, raw)))
+            elif match := re.match(r"set network interface vlan units (\S+) ip (\S+)", line):
+                name = match.group(1); iface = interfaces.setdefault(name, Interface(device=device_id, name=name, trace=self.trace(number, raw)))
+                iface.addresses.append(match.group(2))
+            elif match := re.match(r"set network interface (?:ethernet|aggregate-ethernet|loopback|vlan) (\S+)(?: layer3)? (?:units (\S+) )?ip (\S+)", line):
                 name = match.group(1) if not match.group(2) else match.group(2)
                 iface = interfaces.setdefault(name, Interface(device=device_id, name=name, trace=self.trace(number, raw)))
                 iface.addresses.append(match.group(3))
@@ -122,8 +132,11 @@ class PANOSParser(BaseConfigParser):
         for iface in interfaces.values():
             if not iface.segment_id:
                 iface.segment_id = f"{device_id}-if-{slug(iface.name)}"
-                segments.append(Segment(id=iface.segment_id, name=iface.name.upper(), type="interface", device=device_id,
-                                        networks=interface_networks(iface.addresses)))
+                segments.append(Segment(id=iface.segment_id, name=iface.name.upper(), type="vlan" if iface.vlan_id else "interface", device=device_id,
+                                        vlan_id=iface.vlan_id, networks=interface_networks(iface.addresses)))
+        vlans = [VLAN(device=device_id, id=vlan_id, name=name, subnets=interface_networks(interfaces[name].addresses),
+            gateway=interfaces[name].addresses[0].split("/")[0] if interfaces[name].addresses else None,
+            trace=interfaces[name].trace) for name, vlan_id in vlan_ids.items()]
 
         def resolve_addresses(names: list[str], seen: set[str] | None = None) -> list[str]:
             seen = seen or set(); out: list[str] = []
@@ -182,6 +195,6 @@ class PANOSParser(BaseConfigParser):
                 translated_dst=translated_dst, protocol=nat_protocols[0], original_port=original_port,
                 translated_port=int(translated_port_match.group(1)) if translated_port_match else None,
                 trace=self.trace(line_no, raw, line_end)))
-        return CanonicalConfig(device=device, interfaces=list(interfaces.values()), segments=segments, zones=zones,
+        return CanonicalConfig(device=device, interfaces=list(interfaces.values()), vlans=vlans, segments=segments, zones=zones,
             routes=routes, policies=policies, nat=nat_rules, address_objects=address_objects,
             service_objects=service_objects, warnings=warnings)
