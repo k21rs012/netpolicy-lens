@@ -1,0 +1,11 @@
+{
+  "cisco01.conf":{"parser":"cisco_iosxe","vendor_os":"cisco/ios-xe","counts":[2,2,2,0,0,3,0,0,0],"interfaces":["Vlan10","Vlan20"],"vlans":[10,20],"networks":["192.168.10.0/24","192.168.20.0/24"],"policies":["USER-IN:permit:tcp:443","USER-IN:deny:tcp:22","USER-IN:permit:ip:any"],"nat":[]},
+  "srx01.conf":{"parser":"juniper_srx","vendor_os":"juniper/srx","counts":[2,0,2,2,0,1,0,1,9],"interfaces":["ge-0/0/1.0","ge-0/0/2.0"],"vlans":[],"networks":["10.0.10.0/24","203.0.113.0/29"],"policies":["WEB:permit:tcp:443"],"nat":[]},
+  "rtx01.conf":{"parser":"yamaha_rtx","vendor_os":"yamaha/rtx","counts":[2,0,2,0,1,2,0,0,0],"interfaces":["lan1","lan2"],"vlans":[],"networks":["192.168.30.0/24","192.168.20.0/24"],"policies":["filter-100:permit:tcp:22","filter-101:reject:*:*"],"nat":[]},
+  "fortigate01.conf":{"parser":"fortinet_fortios","vendor_os":"fortinet/fortios","counts":[2,0,2,2,1,1,1,1,1],"interfaces":["port1","port2"],"vlans":[],"networks":["203.0.113.0/29","172.16.100.0/24"],"policies":["Internet-to-Web:permit:tcp:443"],"nat":["policy-10-snat:source"]},
+  "panos01.set":{"parser":"paloalto_panos","vendor_os":"paloalto/panos","counts":[2,0,2,2,1,1,1,2,1],"interfaces":["ethernet1/1","ethernet1/2"],"vlans":[],"networks":["198.51.100.0/29","10.20.0.0/24"],"policies":["OUTBOUND:permit:tcp:443"],"nat":["DNAT-WEB:destination"]},
+  "aoscx01.conf":{"parser":"aruba_aoscx","vendor_os":"aruba/aos-cx","counts":[2,1,1,0,1,2,0,0,0],"interfaces":["1/1/1","vlan 100"],"vlans":[100],"networks":["10.100.0.0/24"],"policies":["SERVER-IN:permit:tcp:443","SERVER-IN:deny:tcp:22"],"nat":[]},
+  "eos01.conf":{"parser":"arista_eos","vendor_os":"arista/eos","counts":[2,1,1,0,1,2,0,0,0],"interfaces":["Ethernet1","Vlan110"],"vlans":[110],"networks":["10.110.0.0/24"],"policies":["APP-IN:permit:tcp:8443","APP-IN:deny:ip:any"],"nat":[]},
+  "allied01.conf":{"parser":"alliedware_plus","vendor_os":"allied/alliedware-plus","counts":[2,1,1,0,1,2,0,0,0],"interfaces":["port1.0.1","vlan120"],"vlans":[120],"networks":["10.120.0.0/24"],"policies":["MGMT-IN:permit:tcp:22","MGMT-IN:deny:ip:any"],"nat":[]},
+  "vyos01.set":{"parser":"vyos","vendor_os":"vyos/vyos","counts":[3,1,3,2,1,1,1,0,0],"interfaces":["eth0","eth1","eth1.130"],"vlans":[130],"networks":["192.0.2.0/29","10.130.0.0/24","10.130.130.0/24"],"policies":["LAN-TO-WAN:permit:tcp:443"],"nat":["source-100:source"]}
+}
