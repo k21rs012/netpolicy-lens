@@ -643,7 +643,9 @@ function Policies({ items }: { items: Policy[] }) {
           >
             <option value="">ALL</option>
             {protocols.map((x) => (
-              <option key={x}>{x.toUpperCase()}</option>
+              <option key={x} value={x}>
+                {x.toUpperCase()}
+              </option>
             ))}
           </select>
         </label>
