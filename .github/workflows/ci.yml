@@ -18,7 +18,9 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r backend/requirements.txt
-      - run: pytest -q
+      # Invoke pytest as a module so the backend working directory is placed on
+      # sys.path and imports such as `from app ...` work consistently in CI.
+      - run: python -m pytest -q
         working-directory: backend
 
   frontend:
