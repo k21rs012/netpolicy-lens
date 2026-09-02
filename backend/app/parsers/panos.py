@@ -5,7 +5,7 @@ import re
 from collections import defaultdict
 
 from ..models import (
-    AddressObject, CanonicalConfig, Device, Interface, NATRule, ParserCapabilities,
+    AddressObject, CanonicalConfig, Confidence, Device, Interface, NATRule, ParserCapabilities,
     ParserWarning, Policy, Route, Segment, ServiceObject, VLAN, Zone,
 )
 from .base import BaseConfigParser
@@ -63,6 +63,7 @@ class PANOSParser(BaseConfigParser):
         device_id = slug(hostname)
         device = Device(id=device_id, hostname=hostname, vendor="paloalto", network_os="panos",
                         platform="PA-Series", source_file=self.source_file)
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^set network virtual-router \S+ protocol (?:bgp|ospf|ospfv3|rip)\b", self.config))
         interfaces: dict[str, Interface] = {}
         vlan_ids: dict[str, int] = {}
         zone_members: dict[str, list[str]] = defaultdict(list)
@@ -74,11 +75,16 @@ class PANOSParser(BaseConfigParser):
         service_groups: dict[str, list[str]] = {}
         policy_data: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
         policy_lines: dict[str, list[tuple[int, str]]] = defaultdict(list)
+        policy_names: dict[str, str] = {}
+        policy_tiers: dict[str, int] = {}
+        partial_policies: set[str] = set()
         nat_data: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
         nat_lines: dict[str, list[tuple[int, str]]] = defaultdict(list)
-        routes: list[Route] = []
+        route_data: dict[tuple[str, str], Route] = {}
+        interface_vrfs: dict[str, str] = {}
         warnings: list[ParserWarning] = []
         unsupported: list[ParserWarning] = []
+        policy_moves: list[tuple[str, str, str | None]] = []
 
         for number, raw in enumerate(self.lines, 1):
             line = raw.strip()
@@ -107,35 +113,58 @@ class PANOSParser(BaseConfigParser):
                 service_objects.append(ServiceObject(device=device_id, name=match.group(1), protocol=match.group(2), ports=ports))
             elif match := re.match(r"set service-group (\S+) members (.+)", line):
                 service_groups[match.group(1)] = _tokens(match.group(2))
-            elif match := re.match(r"set rulebase security rules (\S+) (from|to|source|destination|application|service|action|disabled) (.+)", line):
-                policy_data[match.group(1)][match.group(2)] = _tokens(match.group(3)); policy_lines[match.group(1)].append((number, raw))
+            elif match := re.match(r"set network virtual-router (\S+) interface (.+)", line):
+                for member in _tokens(match.group(2)): interface_vrfs[member] = match.group(1)
+            elif match := re.match(r"set (?:(shared|vsys \S+|device-group \S+|policy panorama) )?(pre-rulebase|post-rulebase|rulebase) security rules (\S+) (from|to|source|destination|application|service|action|disabled) (.+)", line):
+                scope, tier, name, field, value = match.groups(); key = f"{scope or 'local'}:{tier}:{name}"
+                policy_names[key] = name; policy_tiers[key] = {"pre-rulebase": 0, "rulebase": 1, "post-rulebase": 2}[tier]
+                policy_data[key][field] = _tokens(value); policy_lines[key].append((number, raw))
+            elif match := re.match(r"move (?:(shared|vsys \S+|device-group \S+|policy panorama) )?(pre-rulebase|post-rulebase|rulebase) security rules (\S+) (top|bottom|before|after)(?:\s+(\S+))?", line):
+                scope, tier, name, where, anchor = match.groups(); prefix = f"{scope or 'local'}:{tier}:"
+                policy_moves.append((prefix + name, where, prefix + anchor if anchor else None))
+            elif match := re.match(r"set (?:(shared|vsys \S+|device-group \S+|policy panorama) )?(pre-rulebase|post-rulebase|rulebase) security rules (\S+) (\S+) .+", line):
+                scope, tier, name, field = match.groups()
+                if field not in {"description", "tag", "log-start", "log-end", "log-setting", "profile-setting"}:
+                    partial_policies.add(f"{scope or 'local'}:{tier}:{name}")
+                unsupported.append(ParserWarning(device=device_id, line=number, config=line,
+                    reason="unsupported security policy field", parser=self.parser_id))
             elif match := re.match(r"set rulebase nat rules (\S+) (from|to|source|destination|service|source-translation|destination-translation) (.+)", line):
                 nat_data[match.group(1)][match.group(2)] = _tokens(match.group(3)); nat_lines[match.group(1)].append((number, raw))
             elif match := re.match(r"set network virtual-router (\S+) routing-table (?:ip|ipv6) static-route (\S+) destination (\S+)", line):
-                routes.append(Route(device=device_id, destination=match.group(3), trace=self.trace(number, raw)))
+                key = (match.group(1), match.group(2)); route = route_data.setdefault(key,
+                    Route(device=device_id, destination=match.group(3), vrf=match.group(1), trace=self.trace(number, raw)))
+                route.destination = match.group(3)
             elif match := re.match(r"set network virtual-router (\S+) routing-table (?:ip|ipv6) static-route (\S+) (?:nexthop ip-address|interface) (\S+)", line):
-                route = next((r for r in reversed(routes) if r.trace and r.trace.raw_config.find(f"static-route {match.group(2)} ") >= 0), None)
-                if route:
-                    if "nexthop" in line: route.next_hop = match.group(3)
-                    else: route.interface = match.group(3)
+                key = (match.group(1), match.group(2)); route = route_data.setdefault(key,
+                    Route(device=device_id, destination="0.0.0.0/0", vrf=match.group(1), trace=self.trace(number, raw)))
+                if "nexthop" in line: route.next_hop = match.group(3)
+                else: route.interface = match.group(3)
+            elif match := re.match(r"set network virtual-router (\S+) routing-table (?:ip|ipv6) static-route (\S+) metric (\d+)", line):
+                key = (match.group(1), match.group(2)); route = route_data.setdefault(key,
+                    Route(device=device_id, destination="0.0.0.0/0", vrf=match.group(1), trace=self.trace(number, raw)))
+                route.metric = int(match.group(3))
             elif line.startswith("set ") and not line.startswith("set deviceconfig system hostname "):
                 unsupported.append(ParserWarning(device=device_id, line=number, config=line,
                     reason="unsupported statement", parser=self.parser_id))
 
+        routes = list(route_data.values())
+        for name, vrf in interface_vrfs.items():
+            if name in interfaces: interfaces[name].vrf = vrf
         zones: list[Zone] = []
         segments: list[Segment] = []
         for name, members in zone_members.items():
             segment_id = f"{device_id}-zone-{slug(name)}"
             zones.append(Zone(device=device_id, name=name, interfaces=members, segment_id=segment_id))
             networks = [net for member in members if member in interfaces for net in interface_networks(interfaces[member].addresses)]
-            segments.append(Segment(id=segment_id, name=name.upper(), type="zone", device=device_id, networks=networks))
+            segments.append(Segment(id=segment_id, name=name.upper(), type="zone", device=device_id, networks=networks,
+                vrf=next((interfaces[member].vrf for member in members if member in interfaces and interfaces[member].vrf), None)))
             for member in members:
                 if member in interfaces: interfaces[member].zone = name; interfaces[member].segment_id = segment_id
         for iface in interfaces.values():
             if not iface.segment_id:
                 iface.segment_id = f"{device_id}-if-{slug(iface.name)}"
                 segments.append(Segment(id=iface.segment_id, name=iface.name.upper(), type="vlan" if iface.vlan_id else "interface", device=device_id,
-                                        vlan_id=iface.vlan_id, networks=interface_networks(iface.addresses)))
+                                        vlan_id=iface.vlan_id, networks=interface_networks(iface.addresses), vrf=iface.vrf))
         vlans = [VLAN(device=device_id, id=vlan_id, name=name, subnets=interface_networks(interfaces[name].addresses),
             gateway=interfaces[name].addresses[0].split("/")[0] if interfaces[name].addresses else None,
             trace=interfaces[name].trace) for name, vlan_id in vlan_ids.items()]
@@ -188,19 +217,31 @@ class PANOSParser(BaseConfigParser):
                     result.add(name)
             return result
 
-        for sequence, (name, data) in enumerate(policy_data.items(), 1):
+        policy_order = sorted(policy_data, key=lambda key: (policy_tiers.get(key, 1), list(policy_data).index(key)))
+        for name, where, anchor in policy_moves:
+            if name not in policy_order: continue
+            policy_order.remove(name)
+            if where == "top": policy_order.insert(0, name)
+            elif where == "bottom": policy_order.append(name)
+            elif anchor in policy_order:
+                index = policy_order.index(anchor); policy_order.insert(index + (1 if where == "after" else 0), name)
+            else: policy_order.append(name)
+        for sequence, key in enumerate(policy_order, 1):
+            data = policy_data[key]; name = policy_names.get(key, key.rsplit(":", 1)[-1])
             if (data.get("disabled") or ["no"])[0] == "yes":
                 continue
             protocols, ports = resolve_services(data.get("service", []), data.get("application", []))
             action = (data.get("action") or ["deny"])[0]
             canonical_action = "permit" if action in ("allow", "permit") else "deny" if action in ("deny", "drop", "reset-client", "reset-server", "reset-both") else "unknown"
-            lines = policy_lines[name]; line_no = lines[0][0]; line_end = lines[-1][0]
+            lines = policy_lines[key]; line_no = lines[0][0]; line_end = lines[-1][0]
             raw = "\n".join(x[1] for x in lines)
             policies.append(Policy(id=f"{device_id}:security:{name}", device=device_id, name=name, sequence=sequence,
                 src=resolve_addresses(data.get("source", [])), dst=resolve_addresses(data.get("destination", [])),
                 src_segments=[segment_by_name[x] for x in data.get("from", []) if x in segment_by_name],
                 dst_segments=[segment_by_name[x] for x in data.get("to", []) if x in segment_by_name],
                 protocol=protocols, dst_ports=ports, action=canonical_action, direction="zone",
+                chain_id="panos:security",
+                confidence=Confidence.PARTIAL if key in partial_policies else Confidence.EXACT,
                 from_zone=", ".join(data.get("from", [])) or None, to_zone=", ".join(data.get("to", [])) or None,
                 trace=self.trace(line_no, raw, line_end)))
             unresolved = unknown_addresses([*data.get("source", []), *data.get("destination", [])])

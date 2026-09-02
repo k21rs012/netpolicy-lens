@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 
-from ..models import CanonicalConfig, Device, Interface, NATRule, ParserCapabilities, ParserWarning, Policy, Route, Segment, VLAN
+from ..models import CanonicalConfig, Confidence, Device, Interface, NATRule, ParserCapabilities, ParserWarning, Policy, Route, Segment, VLAN
 from .base import BaseConfigParser
 from .common import hostname_from, interface_networks, mask_to_prefix, slug, wildcard_to_network
 from .registry import ParserRegistry
@@ -44,6 +44,7 @@ class CiscoBaseParser(BaseConfigParser):
         hostname = hostname_from(self.config, self.source_file)
         device = Device(id=slug(hostname), hostname=hostname, vendor="cisco", network_os=self.network_os,
                         platform=None, source_file=self.source_file)
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^router (?:ospf|ospfv3|bgp|isis|rip|eigrp)\b", self.config))
         interfaces: list[Interface] = []
         vlans: list[VLAN] = []
         routes: list[Route] = []
@@ -54,6 +55,7 @@ class CiscoBaseParser(BaseConfigParser):
         current_if: Interface | None = None
         current_vlan: VLAN | None = None
         current_acl: str | None = None
+        current_acl_standard = False
         acl_seq = 0
         for number, raw in enumerate(self.lines, 1):
             line = raw.strip()
@@ -67,8 +69,12 @@ class CiscoBaseParser(BaseConfigParser):
                 current_vlan = VLAN(device=device.id, id=int(match.group(1)), name=f"VLAN{match.group(1)}", trace=self.trace(number, raw))
                 vlans.append(current_vlan); current_if = None; current_acl = None
                 continue
-            if match := re.match(r"(?:ip access-list\s+(?:standard|extended)|ipv6 access-list)\s+(.+)", line):
-                current_acl = match.group(1); current_if = None; current_vlan = None; acl_seq = 0
+            if match := re.match(r"ip access-list\s+(standard|extended)\s+(.+)", line):
+                current_acl = match.group(2); current_acl_standard = match.group(1) == "standard"
+                current_if = None; current_vlan = None; acl_seq = 0
+                continue
+            if match := re.match(r"ipv6 access-list\s+(.+)", line):
+                current_acl = match.group(1); current_acl_standard = False; current_if = None; current_vlan = None; acl_seq = 0
                 continue
             if not raw.startswith((" ", "\t")):
                 current_if = None; current_vlan = None; current_acl = None
@@ -80,6 +86,8 @@ class CiscoBaseParser(BaseConfigParser):
                         current_if.addresses.append(address)
                     except ValueError: warnings.append(ParserWarning(device=device.id, line=number, config=line, reason="invalid IPv4 address", parser=self.parser_id))
                 elif match := re.match(r"ipv6 address\s+(\S+)", line): current_if.addresses.append(match.group(1))
+                elif match := re.match(r"(?:ip )?vrf forwarding\s+(\S+)", line): current_if.vrf = match.group(1)
+                elif match := re.match(r"ip policy route-map\s+(\S+)", line): current_if.policy_route_map = match.group(1)
                 elif match := re.match(r"switchport access vlan\s+(\d+)", line): current_if.vlan_id = int(match.group(1))
                 elif match := re.match(r"switchport trunk allowed vlan\s+(.+)", line):
                     current_if.trunk_vlans = [int(x) for x in re.findall(r"\d+", match.group(1))]
@@ -91,19 +99,30 @@ class CiscoBaseParser(BaseConfigParser):
             if current_vlan and (match := re.match(r"name\s+(.+)", line)):
                 current_vlan.name = match.group(1); continue
             if current_acl and re.match(r"(?:\d+\s+)?(?:permit|deny)\s+", line):
-                parsed = self._parse_acl_rule(device.id, current_acl, line, number, acl_seq)
+                parsed = self._parse_acl_rule(device.id, current_acl, line, number, acl_seq, current_acl_standard)
                 if parsed: policies.append(parsed); acl_seq = parsed.sequence
                 else: unsupported.append(ParserWarning(device=device.id, line=number, config=line, reason="unsupported ACL statement", parser=self.parser_id))
                 continue
             if match := re.match(r"access-list\s+(\S+)\s+(.+)", line):
-                parsed = self._parse_acl_rule(device.id, match.group(1), match.group(2), number, len(policies))
+                acl_name = match.group(1)
+                standard = acl_name.isdigit() and (1 <= int(acl_name) <= 99 or 1300 <= int(acl_name) <= 1999)
+                parsed = self._parse_acl_rule(device.id, acl_name, match.group(2), number, len(policies), standard)
                 if parsed: policies.append(parsed)
                 else: unsupported.append(ParserWarning(device=device.id, line=number, config=line, reason="unsupported ACL statement", parser=self.parser_id))
                 continue
-            if match := re.match(r"ip route\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?", line):
-                try: dest = str(ipaddress.ip_network(f"{match.group(1)}/{match.group(2)}", strict=False))
-                except ValueError: dest = match.group(1)
-                routes.append(Route(device=device.id, destination=dest, next_hop=match.group(3), trace=self.trace(number, raw)))
+            if re.match(r"ip route(?: vrf \S+)?\s+\S+\s+\S+\s+\S+", line):
+                tokens = line.split()[2:]; vrf = None
+                if tokens and tokens[0] == "vrf": vrf, tokens = tokens[1], tokens[2:]
+                destination, mask, rest = tokens[0], tokens[1], tokens[2:]
+                try: dest = str(ipaddress.ip_network(f"{destination}/{mask}", strict=False))
+                except ValueError: dest = destination
+                target_is_ip = bool(rest and re.fullmatch(r"[0-9a-fA-F:.]+", rest[0]))
+                interface = None if target_is_ip or not rest else rest[0]
+                next_hop = rest[0] if target_is_ip else rest[1] if len(rest) > 1 and re.fullmatch(r"[0-9a-fA-F:.]+", rest[1]) else None
+                consumed = 1 if target_is_ip else 2 if next_hop else 1
+                metric = int(rest[consumed]) if len(rest) > consumed and rest[consumed].isdigit() else None
+                routes.append(Route(device=device.id, destination=dest, next_hop=next_hop,
+                    interface=interface, metric=metric, vrf=vrf, trace=self.trace(number, raw)))
                 continue
             if match := re.match(r"ip nat inside source static (tcp|udp) (\S+) (\d+) (\S+) (\d+)", line):
                 nat_rules.append(NATRule(device=device.id, name=f"static-{number}", type="source",
@@ -130,27 +149,43 @@ class CiscoBaseParser(BaseConfigParser):
                 vlan.gateway = svi.addresses[0].split("/")[0] if svi.addresses else None
                 svi.vlan_id = vlan.id
             seg_id = f"{device.id}-vlan-{vlan.id}"
-            segments.append(Segment(id=seg_id, name=vlan.name, type="vlan", device=device.id, vlan_id=vlan.id, networks=vlan.subnets))
+            segments.append(Segment(id=seg_id, name=vlan.name, type="vlan", device=device.id, vlan_id=vlan.id, networks=vlan.subnets,
+                                    vrf=svi.vrf if svi else None))
             for iface in interfaces:
                 if iface.vlan_id == vlan.id: iface.segment_id = seg_id
         for iface in interfaces:
             if iface.addresses and not iface.segment_id:
                 iface.segment_id = f"{device.id}-{slug(iface.name)}"
-                segments.append(Segment(id=iface.segment_id, name=iface.description or iface.name, type="interface", device=device.id, networks=interface_networks(iface.addresses)))
-        bindings = {acl: (iface.name, direction, iface.segment_id) for iface in interfaces for direction, names in (("in", iface.acl_in), ("out", iface.acl_out)) for acl in names}
+                segments.append(Segment(id=iface.segment_id, name=iface.description or iface.name, type="interface", device=device.id, networks=interface_networks(iface.addresses), vrf=iface.vrf))
+        bindings = [(acl, iface.name, direction, iface.segment_id) for iface in interfaces for direction, names in (("in", iface.acl_in), ("out", iface.acl_out)) for acl in names]
+        bound_policies: list[Policy] = []
         for policy in policies:
-            if policy.name in bindings:
-                policy.interface, policy.direction, seg = bindings[policy.name]
-                if seg: policy.src_segments = [seg] if policy.direction == "in" else policy.src_segments
+            matches = [binding for binding in bindings if binding[0] == policy.name]
+            if not matches: bound_policies.append(policy); continue
+            for index, (_, interface, direction, segment_id) in enumerate(matches):
+                item = policy.model_copy(deep=True)
+                item.interface, item.direction = interface, direction
+                item.chain_id = f"{direction}:{interface}:{item.name}"
+                if len(matches) > 1: item.id = f"{policy.id}:{direction}:{interface}"
+                if segment_id and direction == "in": item.src_segments = [segment_id]
+                if segment_id and direction == "out": item.dst_segments = [segment_id]
+                bound_policies.append(item)
+        policies = bound_policies
         return CanonicalConfig(device=device, interfaces=interfaces, vlans=vlans, segments=segments,
             routes=routes, policies=policies, nat=nat_rules, warnings=warnings, unsupported=unsupported)
 
-    def _parse_acl_rule(self, device: str, acl: str, line: str, number: int, previous: int) -> Policy | None:
+    def _parse_acl_rule(self, device: str, acl: str, line: str, number: int, previous: int,
+                        standard: bool = False) -> Policy | None:
         tokens = line.split(); pos = 0
         sequence = previous + 10
         if tokens and tokens[0].isdigit(): sequence = int(tokens[0]); pos += 1
         if pos >= len(tokens) or tokens[pos] not in ("permit", "deny"): return None
         action = tokens[pos]; pos += 1
+        if standard:
+            src, _ = _acl_address(tokens, pos)
+            return Policy(id=f"{device}:{acl}:{sequence}", device=device, name=acl, sequence=sequence,
+                          src=[src], dst=["any"], protocol=["ip"], action=action,
+                          trace=self.trace(number, line))
         protocol = tokens[pos] if pos < len(tokens) else "ip"; pos += 1
         src, pos = _acl_address(tokens, pos)
         src_ports = ["any"]
@@ -161,8 +196,13 @@ class CiscoBaseParser(BaseConfigParser):
         if pos < len(tokens) and tokens[pos] in ("eq", "range", "gt", "lt", "neq"):
             op = tokens[pos]; pos += 1; values = tokens[pos:pos + (2 if op == "range" else 1)]
             dst_ports = [values[0] if op == "eq" else f"{op} {'-'.join(values)}"]
+            pos += len(values)
+        remaining = [token for token in tokens[pos:] if token not in {"log", "log-input"}]
+        states = ["established"] if "established" in remaining else []
+        remaining = [token for token in remaining if token != "established"]
         return Policy(id=f"{device}:{acl}:{sequence}", device=device, name=acl, sequence=sequence, src=[src], dst=[dst],
-                      protocol=[protocol], src_ports=src_ports, dst_ports=dst_ports, action=action, trace=self.trace(number, line))
+                      protocol=[protocol], src_ports=src_ports, dst_ports=dst_ports, action=action, states=states,
+                      confidence=Confidence.PARTIAL if remaining else Confidence.EXACT, trace=self.trace(number, line))
 
 
 @ParserRegistry.register

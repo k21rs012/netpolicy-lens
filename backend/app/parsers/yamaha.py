@@ -25,7 +25,8 @@ class YamahaRTXParser(BaseConfigParser):
     def parse(self) -> CanonicalConfig:
         hostname = hostname_from(self.config, self.source_file); device_id = slug(hostname)
         device = Device(id=device_id, hostname=hostname, vendor="yamaha", network_os="rtx", source_file=self.source_file)
-        ifaces: dict[str, Interface] = {}; vlans: list[VLAN] = []; policies: list[Policy] = []; routes: list[Route] = []; bindings: list[tuple[str, str, list[str]]] = []
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^(?:ospf|bgp|rip) (?:use|router-id|autonomous-system)\b", self.config))
+        ifaces: dict[str, Interface] = {}; vlans: list[VLAN] = []; policies: list[Policy] = []; routes: list[Route] = []; bindings: list[tuple[str, str, list[str], set[str]]] = []
         vlan_ifaces: dict[int, str] = {}; nat_types: dict[str, str] = {}; nat_bindings: dict[str, str] = {}; nat_static: list[tuple[int, re.Match[str]]] = []
         unsupported: list[ParserWarning] = []
         for n, raw in enumerate(self.lines, 1):
@@ -45,10 +46,21 @@ class YamahaRTXParser(BaseConfigParser):
                 action = {"pass": "permit", "reject": "reject", "restrict": "restrict"}[match.group(2)]
                 src, dst, protocol, src_port, dst_port = (match.group(index) or "*" for index in range(3, 8))
                 policies.append(Policy(id=f"{device_id}:filter:{match.group(1)}", device=device_id,
-                    name=f"filter-{match.group(1)}", sequence=int(match.group(1)), src=[src], dst=[dst],
+                    name=f"filter-{match.group(1)}", sequence=int(match.group(1)), src=src.split(","), dst=dst.split(","),
                     protocol=protocol.split(","), src_ports=src_port.split(","), dst_ports=dst_port.split(","),
                     action=action, trace=self.trace(n, raw)))
-            elif match := re.match(r"(?:ip|ipv6) (\S+) secure filter (in|out) (.+)", line): bindings.append((match.group(1), match.group(2), match.group(3).split()))
+            elif match := re.match(r"(?:ip|ipv6) filter dynamic (\d+) (\S+) (\S+) (\S+)(?: (\S+))?", line):
+                service = match.group(4).lower(); services = {"ftp": ("tcp", "21"), "www": ("tcp", "80"),
+                    "https": ("tcp", "443"), "domain": ("udp", "53"), "smtp": ("tcp", "25")}
+                protocol, dst_port = services.get(service, (service if service in {"tcp", "udp", "icmp"} else "ip", "any"))
+                policies.append(Policy(id=f"{device_id}:dynamic:{match.group(1)}", device=device_id,
+                    name=f"dynamic-{match.group(1)}", sequence=int(match.group(1)), src=match.group(2).split(","),
+                    dst=match.group(3).split(","), protocol=[protocol], dst_ports=[dst_port], action="permit",
+                    states=["new", "established", "related"], trace=self.trace(n, raw)))
+            elif match := re.match(r"(?:ip|ipv6) (\S+) secure filter (in|out) (.+)", line):
+                tokens = match.group(3).split(); dynamic_ids = set(tokens[tokens.index("dynamic") + 1:]) if "dynamic" in tokens else set()
+                ordered = tokens[tokens.index("dynamic") + 1:] + tokens[:tokens.index("dynamic")] if "dynamic" in tokens else tokens
+                bindings.append((match.group(1), match.group(2), ordered, dynamic_ids))
             elif match := re.match(r"(ip|ipv6) route (\S+) gateway (\S+)(?: (\S+))?", line):
                 default = "::/0" if match.group(1) == "ipv6" else "0.0.0.0/0"
                 routes.append(Route(device=device_id, destination=default if match.group(2) == "default" else match.group(2), next_hop=match.group(3), interface=match.group(4), trace=self.trace(n, raw)))
@@ -65,14 +77,29 @@ class YamahaRTXParser(BaseConfigParser):
                 iface.vlan_id = vlan.id; vlan.subnets = interface_networks(iface.addresses)
                 vlan.gateway = iface.addresses[0].split("/")[0] if iface.addresses else None
             iface.segment_id = f"{device_id}-{slug(iface.name)}"; segments.append(Segment(id=iface.segment_id, name=vlan.name if vlan else iface.name.upper(), type="vlan" if vlan else "interface", device=device_id, vlan_id=vlan.id if vlan else None, networks=interface_networks(iface.addresses)))
-        pmap = {str(p.sequence): p for p in policies}
-        for iface_name, direction, ids in bindings:
+        static_map = {str(p.sequence): p for p in policies if p.name.startswith("filter-")}
+        dynamic_map = {str(p.sequence): p for p in policies if p.name.startswith("dynamic-")}
+        bind_counts: dict[tuple[str, str], int] = {}
+        for _, _, ids, dynamic_ids in bindings:
+            for pid in ids:
+                key = ("dynamic" if pid in dynamic_ids else "static", pid)
+                bind_counts[key] = bind_counts.get(key, 0) + 1
+        bound_items: list[Policy] = []; bound_keys: set[tuple[str, str]] = set()
+        for iface_name, direction, ids, dynamic_ids in bindings:
             iface = ifaces.setdefault(iface_name, Interface(device=device_id, name=iface_name))
             target = iface.acl_in if direction == "in" else iface.acl_out; target.extend(ids)
-            for pid in ids:
-                if pid in pmap:
-                    pmap[pid].interface = iface_name; pmap[pid].direction = direction
-                    if iface.segment_id and direction == "in": pmap[pid].src_segments = [iface.segment_id]
+            for order, pid in enumerate(ids):
+                policy = dynamic_map.get(pid) if pid in dynamic_ids else static_map.get(pid)
+                if policy:
+                    item = policy.model_copy(deep=True); key = ("dynamic" if pid in dynamic_ids else "static", pid)
+                    item.interface = iface_name; item.direction = direction
+                    item.chain_id = f"{direction}:{iface_name}:secure-filter"; item.order = order
+                    if bind_counts[key] > 1: item.id = f"{policy.id}:{direction}:{iface_name}"
+                    if iface.segment_id and direction == "in": item.src_segments = [iface.segment_id]
+                    if iface.segment_id and direction == "out": item.dst_segments = [iface.segment_id]
+                    bound_items.append(item); bound_keys.add(key)
+        policies = [policy for policy in policies if (("dynamic" if policy.name.startswith("dynamic-") else "static"), str(policy.sequence)) not in bound_keys]
+        policies.extend(bound_items)
         nat_rules: list[NATRule] = []
         for descriptor, kind in nat_types.items():
             if kind in ("masquerade", "nat-masquerade"):

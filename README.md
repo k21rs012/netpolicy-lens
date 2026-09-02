@@ -158,7 +158,8 @@ npm run test:e2e
 - 実機接続、Config Push、自動修正は行いません。
 - configは外部サービスへ送信しません。
 - Topologyの機器間リンクは設定内サブネットの重複から推定し、物理配線を保証しません。
-- 現MVPはstateful behavior、dynamic routing、NAT後の完全な到達性を再現しません。
+- Path Traceはconnected/static routeの最長一致、VRF、ACL/zone/global chain、指定したconnection stateを評価します。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
+- 一致したNAT ruleと変換値はPath Traceに表示しますが、実セッションテーブルや時刻・ユーザー・URL categoryなどconfig外のランタイム条件は再現しません。
 - 未解決オブジェクトや適用関係が曖昧な場合は `UNKNOWN` を優先します。
 - Password / Secret / SNMP CommunityはSnapshot保存前とJSON Export時にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
 - 認証・RBACは未実装です。Composeは`127.0.0.1:8080`だけにbindします。リモート公開時は認証付きReverse Proxyを必須としてください。詳細は[SECURITY.md](SECURITY.md)を参照してください。

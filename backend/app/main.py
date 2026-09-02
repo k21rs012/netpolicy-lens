@@ -207,8 +207,11 @@ def topology(snapshot_id: str | None = None):
 
 
 @app.get("/api/reachability")
-def reachability(src: str, dst: str, protocol: str = "tcp", port: int | None = None, snapshot_id: str | None = None):
+def reachability(src: str, dst: str, protocol: str = "tcp", port: int | None = None,
+                 state: str = "new", snapshot_id: str | None = None):
     cfgs, resolved = configs(snapshot_id)
-    try: result = analyze_reachability(cfgs, src, dst, protocol, port)
+    if state not in {"new", "established", "related", "invalid", "untracked"}:
+        raise HTTPException(422, "Unsupported connection state")
+    try: result = analyze_reachability(cfgs, src, dst, protocol, port, state)
     except ValueError as exc: raise HTTPException(404, str(exc)) from exc
     return {"snapshot_id": resolved, **result}

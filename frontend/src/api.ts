@@ -22,9 +22,9 @@ export const api = {
       `/api/diff?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}`,
     ),
   topology: () => json<any>("/api/topology"),
-  reachability: (src: string, dst: string, protocol: string, port: string) =>
+  reachability: (src: string, dst: string, protocol: string, port: string, state = "new") =>
     json<any>(
-      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}`,
+      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}&state=${encodeURIComponent(state)}`,
     ),
   previewConfigs: (files: File[]) => {
     const form = new FormData();

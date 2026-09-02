@@ -3,9 +3,10 @@ from __future__ import annotations
 import ipaddress
 import re
 import shlex
+from collections import defaultdict
 
 from ..models import (
-    AddressObject, CanonicalConfig, Device, Interface, NATRule, ParserCapabilities,
+    AddressObject, CanonicalConfig, Confidence, Device, Interface, NATRule, ParserCapabilities,
     ParserWarning, Policy, Route, Segment, ServiceObject, VLAN, Zone,
 )
 from .base import BaseConfigParser
@@ -63,32 +64,53 @@ class CiscoASABaseParser(BaseConfigParser):
             return _network(tokens[pos], tokens[pos + 1]), pos + 2
         return tokens[pos], pos + 1
 
-    def _acl(self, device: str, name: str, body: str, number: int, sequence: int) -> Policy | None:
+    def _acl(self, device: str, name: str, body: str, number: int, sequence: int,
+             services: list[ServiceObject] | None = None) -> Policy | None:
         tokens = body.split()
         if tokens and tokens[0] == "line" and len(tokens) > 2 and tokens[1].isdigit():
             sequence, tokens = int(tokens[1]), tokens[2:]
+        standard = bool(tokens and tokens[0] == "standard")
         if tokens and tokens[0] in {"extended", "standard"}:
             tokens = tokens[1:]
         if len(tokens) < 2 or tokens[0] not in {"permit", "deny"}:
             return None
+        if standard:
+            action = tokens[0]; src, _ = self._acl_address(tokens, 1)
+            return Policy(id=f"{device}:{name}:{sequence}", device=device, name=name,
+                sequence=sequence, src=[src], dst=["any"], protocol=["ip"], action=action,
+                trace=self.trace(number, body))
         action, protocol = tokens[0], tokens[1]
-        pos = 2
+        ports = ["any"]
+        if protocol in {"object", "object-group"} and len(tokens) > 2:
+            service = next((item for item in services or [] if item.name == tokens[2]), None)
+            if service:
+                protocol = service.protocol; ports = service.ports or ["any"]; pos = 3
+            else:
+                protocol = "any"; pos = 3
+        else:
+            pos = 2
         src, pos = self._acl_address(tokens, pos)
         dst, pos = self._acl_address(tokens, pos)
-        ports = ["any"]
         if pos < len(tokens) and tokens[pos] in {"eq", "range", "lt", "gt", "neq"}:
             operator = tokens[pos]
             count = 2 if operator == "range" else 1
             values = tokens[pos + 1:pos + 1 + count]
             ports = [values[0] if operator == "eq" and values else f"{operator} {'-'.join(values)}"]
+            pos += 1 + len(values)
+        remaining = [token for token in tokens[pos:] if token not in {"log", "inactive"}]
+        states = ["established"] if "established" in remaining else []
+        remaining = [token for token in remaining if token != "established"]
         return Policy(id=f"{device}:{name}:{sequence}", device=device, name=name,
             sequence=sequence, src=[src], dst=[dst], protocol=[protocol],
-            dst_ports=ports, action=action, trace=self.trace(number, body))
+            dst_ports=ports, action=action, states=states,
+            confidence=Confidence.PARTIAL if remaining else Confidence.EXACT,
+            trace=self.trace(number, body))
 
     def parse(self) -> CanonicalConfig:
         hostname = hostname_from(self.config, self.source_file)
         device = Device(id=slug(hostname), hostname=hostname, vendor="cisco",
             network_os=self.network_os, source_file=self.source_file)
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^router (?:ospf|bgp|eigrp|rip)\b", self.config))
         interfaces: list[Interface] = []
         routes: list[Route] = []
         policies: list[Policy] = []
@@ -99,7 +121,7 @@ class CiscoASABaseParser(BaseConfigParser):
         current_if: Interface | None = None
         current_object: AddressObject | None = None
         current_service: ServiceObject | None = None
-        acl_bindings: dict[str, tuple[str, str]] = {}
+        acl_bindings: list[tuple[str, str, str]] = []
         for number, raw in enumerate(self.lines, 1):
             line = raw.strip()
             if not line or line.startswith("!"):
@@ -119,6 +141,7 @@ class CiscoASABaseParser(BaseConfigParser):
             if current_if:
                 if match := re.match(r"description\s+(.+)", line): current_if.description = match.group(1)
                 elif match := re.match(r"nameif\s+(\S+)", line): current_if.zone = match.group(1)
+                elif match := re.match(r"security-level\s+(\d+)", line): current_if.security_level = int(match.group(1))
                 elif match := re.match(r"ip address\s+(\S+)\s+(\S+)", line):
                     current_if.addresses.append(f"{match.group(1)}/{mask_to_prefix(match.group(2))}")
                 elif match := re.match(r"ipv6 address\s+(\S+)", line): current_if.addresses.append(match.group(1))
@@ -144,13 +167,17 @@ class CiscoASABaseParser(BaseConfigParser):
                 elif match := re.match(r"service-object object\s+(\S+)", line): current_service.ports.append(match.group(1))
                 continue
             if match := re.match(r"access-list\s+(\S+)\s+(.+)", line):
-                parsed = self._acl(device.id, match.group(1), match.group(2), number, len(policies) + 10)
+                parsed = self._acl(device.id, match.group(1), match.group(2), number, len(policies) + 10, services)
                 if parsed: policies.append(parsed)
                 else: unsupported.append(ParserWarning(device=device.id, line=number, config=line,
                     reason="unsupported ASA ACL statement", parser=self.parser_id))
                 continue
             if match := re.match(r"access-group\s+(\S+)\s+(in|out)\s+interface\s+(\S+)", line):
-                acl_bindings[match.group(1)] = (match.group(3), match.group(2)); continue
+                acl_bindings.append((match.group(1), match.group(3), match.group(2))); continue
+            if match := re.match(r"access-group\s+(\S+)\s+global", line):
+                acl_bindings.append((match.group(1), "global", "global")); continue
+            if line == "same-security-traffic permit inter-interface":
+                device.features["same_security_inter_interface"] = True; continue
             if match := re.match(r"route\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)", line):
                 routes.append(Route(device=device.id, destination=_network(match.group(2), match.group(3)),
                     next_hop=match.group(4), interface=match.group(1), trace=self.trace(number, raw))); continue
@@ -167,12 +194,23 @@ class CiscoASABaseParser(BaseConfigParser):
                     device=device.id, networks=interface_networks(interface.addresses)))
                 zones.append(Zone(device=device.id, name=interface.zone,
                     interfaces=[interface.name], segment_id=interface.segment_id, trace=interface.trace))
+        bound_policies: list[Policy] = []
         for policy in policies:
-            if policy.name in acl_bindings:
-                policy.interface, policy.direction = acl_bindings[policy.name]
-                interface = next((item for item in interfaces if item.zone == policy.interface), None)
-                if interface and interface.segment_id and policy.direction == "in":
-                    policy.src_segments = [interface.segment_id]
+            matches = [binding for binding in acl_bindings if binding[0] == policy.name]
+            if not matches: bound_policies.append(policy); continue
+            for _, interface_name, direction in matches:
+                item = policy.model_copy(deep=True); item.interface, item.direction = interface_name, direction
+                item.chain_id = f"{direction}:{interface_name}:{item.name}"
+                if len(matches) > 1: item.id = f"{policy.id}:{direction}:{interface_name}"
+                interface = next((value for value in interfaces if value.zone == interface_name), None)
+                if interface and interface.segment_id and direction == "in": item.src_segments = [interface.segment_id]
+                if interface and interface.segment_id and direction == "out": item.dst_segments = [interface.segment_id]
+                bound_policies.append(item)
+        policies = bound_policies
+        object_values = {item.name: item.values for item in objects}
+        for policy in policies:
+            policy.src = [value for name in policy.src for value in object_values.get(name, [name])]
+            policy.dst = [value for name in policy.dst for value in object_values.get(name, [name])]
         return CanonicalConfig(device=device, interfaces=interfaces, segments=segments, zones=zones,
             routes=routes, policies=policies, nat=nat, address_objects=objects,
             service_objects=services, unsupported=unsupported)
@@ -209,11 +247,16 @@ class ExtremeBaseParser(BaseConfigParser):
         hostname = match.group(1).strip('"') if match else hostname_from(self.config, self.source_file)
         device = Device(id=slug(hostname), hostname=hostname, vendor="extreme",
             network_os=self.network_os, source_file=self.source_file)
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^(?:enable|configure) (?:ospf|bgp|isis|rip)\b|^router (?:ospf|bgp|isis|rip)\b", self.config))
         vlans: dict[int, VLAN] = {}
         vlan_names: dict[str, int] = {}
         interfaces: list[Interface] = []
         routes: list[Route] = []
         policies: list[Policy] = []
+        exos_bindings: list[tuple[str, str, str]] = []
+        voss_bindings: list[tuple[int, int, str]] = []
+        voss_aces: dict[tuple[int, int], dict[str, str | int]] = defaultdict(dict)
+        voss_acl_direction: dict[int, str] = {}
         current_if: Interface | None = None
         for number, raw in enumerate(self.lines, 1):
             line = raw.strip()
@@ -237,10 +280,32 @@ class ExtremeBaseParser(BaseConfigParser):
             if not raw.startswith((" ", "\t")): current_if = None
             if match := re.match(r"(?:configure iproute add|ip route)\s+(\S+)\s+(\S+)", line):
                 routes.append(Route(device=device.id, destination=match.group(1), next_hop=match.group(2), trace=self.trace(number, raw))); continue
-            if match := re.match(r"create access-list\s+(\S+)\s+\"?(permit|deny)\s+(\S+).*", line):
-                policies.append(Policy(id=f"{device.id}:{match.group(1)}:{number}", device=device.id,
-                    name=match.group(1), sequence=number, protocol=[match.group(3)], action=match.group(2),
-                    trace=self.trace(number, raw)))
+            if match := re.match(r"create access-list\s+(\S+)\s+\"?(permit|deny)\s+(\S+)(.*)", line):
+                name, action, protocol, tail = match.groups()
+                src = re.search(r"source-address\s+(\S+)", tail); dst = re.search(r"destination-address\s+(\S+)", tail)
+                port_match = re.search(r"destination-port\s+(?:eq\s+)?(\S+)", tail)
+                policies.append(Policy(id=f"{device.id}:{name}:{number}", device=device.id,
+                    name=name, sequence=number, src=[src.group(1).strip('"') if src else "any"],
+                    dst=[dst.group(1).strip('"') if dst else "any"], protocol=[protocol.strip('"')],
+                    dst_ports=[port_match.group(1).strip('"') if port_match else "any"], action=action,
+                    default_action="permit", trace=self.trace(number, raw)))
+                continue
+            if match := re.match(r"configure access-list\s+(\S+)\s+(?:vlan\s+|ports\s+)(\S+).*\s+(ingress|egress)$", line):
+                exos_bindings.append((match.group(1), match.group(2), "in" if match.group(3) == "ingress" else "out")); continue
+            if match := re.match(r"filter acl\s+(\d+)\s+type\s+(\S+)", line):
+                voss_acl_direction[int(match.group(1))] = "out" if "out" in match.group(2).lower() else "in"; continue
+            if match := re.match(r"filter acl vlan\s+(\d+)\s+(\d+)(?:\s+(in|out))?", line):
+                voss_bindings.append((int(match.group(2)), int(match.group(1)), match.group(3) or voss_acl_direction.get(int(match.group(2)), "in"))); continue
+            if match := re.match(r"filter acl ace\s+(\d+)\s+(\d+)$", line):
+                voss_aces[(int(match.group(1)), int(match.group(2)))]["line"] = number; continue
+            if match := re.match(r"filter acl ace action\s+(\d+)\s+(\d+)\s+(permit|deny|drop)", line):
+                data = voss_aces[(int(match.group(1)), int(match.group(2)))]; data["action"] = "permit" if match.group(3) == "permit" else "deny"; data["line"] = number; continue
+            if match := re.match(r"filter acl ace (?:ip|ipv6)\s+(\d+)\s+(\d+)\s+(.+)", line):
+                data = voss_aces[(int(match.group(1)), int(match.group(2)))]; tail = match.group(3); data["line"] = number
+                for key, pattern in (("src", r"(?:src-ip|src)\s+(\S+)"), ("dst", r"(?:dst-ip|dst)\s+(\S+)"),
+                                     ("protocol", r"protocol\s+(\S+)"), ("port", r"(?:dst-port|destination-port)\s+(\S+)")):
+                    if found := re.search(pattern, tail): data[key] = found.group(1)
+                continue
         segments: list[Segment] = []
         for vlan in vlans.values():
             svi = next((item for item in interfaces if item.vlan_id == vlan.id), None)
@@ -249,6 +314,31 @@ class ExtremeBaseParser(BaseConfigParser):
             segments.append(Segment(id=seg_id, name=vlan.name, type="vlan", device=device.id,
                 vlan_id=vlan.id, networks=vlan.subnets))
             if svi: svi.segment_id = seg_id
+        segment_by_vlan = {segment.vlan_id: segment.id for segment in segments if segment.vlan_id is not None}
+        interface_by_name = {interface.name: interface for interface in interfaces}
+        for acl, target, direction in exos_bindings:
+            segment_id = next((segment.id for segment in segments
+                               if segment.name.lower() == target.strip('"').lower()), None)
+            iface = interface_by_name.get(target)
+            if iface: segment_id = iface.segment_id
+            for policy in policies:
+                if policy.name != acl: continue
+                policy.direction = direction; policy.interface = target
+                policy.chain_id = f"{direction}:{target}:{acl}"
+                if segment_id and direction == "in": policy.src_segments = [segment_id]
+                if segment_id and direction == "out": policy.dst_segments = [segment_id]
+        for (acl, ace), data in voss_aces.items():
+            binding = next((item for item in voss_bindings if item[0] == acl), None)
+            direction = binding[2] if binding else "unknown"; vlan_id = binding[1] if binding else None
+            segment_id = segment_by_vlan.get(vlan_id) if vlan_id is not None else None
+            policies.append(Policy(id=f"{device.id}:acl-{acl}:{ace}", device=device.id,
+                name=f"acl-{acl}", sequence=ace, src=[str(data.get("src", "any"))],
+                dst=[str(data.get("dst", "any"))], protocol=[str(data.get("protocol", "ip"))],
+                dst_ports=[str(data.get("port", "any"))], action=str(data.get("action", "unknown")),
+                direction=direction, interface=f"Vlan{vlan_id}" if vlan_id is not None else None,
+                src_segments=[segment_id] if segment_id and direction == "in" else [],
+                chain_id=f"{direction}:vlan-{vlan_id}:acl-{acl}" if binding else None,
+                trace=self.trace(int(data.get("line", 0)), self.lines[int(data.get("line", 1)) - 1]) if data.get("line") else None))
         return CanonicalConfig(device=device, interfaces=interfaces, vlans=list(vlans.values()),
             segments=segments, routes=routes, policies=policies)
 
@@ -301,14 +391,30 @@ class MikroTikRouterOSParser(BaseConfigParser):
         hostname = identity.group(1) if identity else hostname_from(self.config, self.source_file)
         device = Device(id=slug(hostname), hostname=hostname, vendor="mikrotik",
             network_os="routeros", source_file=self.source_file)
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^/routing (?:bgp|ospf|rip)\b", self.config))
         interfaces: dict[str, Interface] = {}
         vlans: dict[int, VLAN] = {}
         routes: list[Route] = []
         policies: list[Policy] = []
         nat: list[NATRule] = []
         address_values: dict[str, list[str]] = {}
+        interface_lists: dict[str, list[str]] = defaultdict(list)
+        interface_vrfs: dict[str, str] = {}
         section = ""
+        logical_lines: list[tuple[int, int, str]] = []
+        pending = ""; start = 0
         for number, raw in enumerate(self.lines, 1):
+            stripped = raw.rstrip()
+            if pending:
+                pending += " " + stripped.lstrip()
+            else:
+                pending = stripped; start = number
+            if pending.endswith("\\"):
+                pending = pending[:-1].rstrip(); continue
+            logical_lines.append((start, number, pending)); pending = ""
+        if pending: logical_lines.append((start, len(self.lines), pending))
+        pending_policies: list[tuple[int, int, str, dict[str, str]]] = []
+        for number, line_end, raw in logical_lines:
             line = raw.strip()
             if not line or line.startswith("#"): continue
             if line.startswith("/"): section = line; continue
@@ -324,19 +430,18 @@ class MikroTikRouterOSParser(BaseConfigParser):
                 if address: interface.addresses.append(address)
             elif section == "/ip route" and line.startswith("add "):
                 routes.append(Route(device=device.id, destination=values.get("dst-address", "0.0.0.0/0"),
-                    next_hop=values.get("gateway"), trace=self.trace(number, raw)))
+                    next_hop=values.get("gateway"), vrf=None if values.get("routing-table", "main") == "main" else values.get("routing-table"),
+                    metric=int(values["distance"]) if values.get("distance", "").isdigit() else None,
+                    trace=self.trace(number, raw)))
+            elif section == "/ip vrf" and line.startswith("add "):
+                for member in values.get("interfaces", "").split(","):
+                    if member: interface_vrfs[member] = values.get("name", "main")
             elif section == "/ip firewall address-list" and line.startswith("add "):
                 address_values.setdefault(values.get("list", "unnamed"), []).append(values.get("address", "any"))
+            elif section == "/interface list member" and line.startswith("add "):
+                interface_lists[values.get("list", "unnamed")].append(values.get("interface", "unknown"))
             elif section == "/ip firewall filter" and line.startswith("add "):
-                action = values.get("action", "drop")
-                policies.append(Policy(id=f"{device.id}:filter:{number}", device=device.id,
-                    name=values.get("comment", values.get("chain", "filter")), sequence=number,
-                    src=[values.get("src-address", values.get("src-address-list", "any"))],
-                    dst=[values.get("dst-address", values.get("dst-address-list", "any"))],
-                    protocol=[values.get("protocol", "ip")], dst_ports=[values.get("dst-port", "any")],
-                    action="permit" if action in {"accept", "fasttrack-connection"} else "reject" if action == "reject" else "deny",
-                    direction="in" if values.get("chain") == "input" else "out" if values.get("chain") == "output" else "unknown",
-                    interface=values.get("in-interface") or values.get("out-interface"), trace=self.trace(number, raw)))
+                pending_policies.append((number, line_end, raw, values))
             elif section == "/ip firewall nat" and line.startswith("add "):
                 action = values.get("action", "nat")
                 nat.append(NATRule(device=device.id, name=values.get("comment", f"nat-{number}"),
@@ -345,12 +450,42 @@ class MikroTikRouterOSParser(BaseConfigParser):
                     translated_src=values.get("to-addresses") if values.get("chain") != "dstnat" else None,
                     translated_dst=values.get("to-addresses") if values.get("chain") == "dstnat" else None,
                     protocol=values.get("protocol", "any"), trace=self.trace(number, raw)))
+        for number, line_end, raw, values in pending_policies:
+            if values.get("disabled", "no").lower() in {"yes", "true"}: continue
+            action = values.get("action", "drop"); chain = values.get("chain", "forward")
+            action_map = {"accept": "permit", "fasttrack-connection": "permit", "drop": "deny",
+                          "reject": "reject", "tarpit": "deny", "jump": "jump", "return": "return"}
+            canonical_action = action_map.get(action, "continue")
+            terminal = canonical_action not in {"continue", "return"}
+            src_name = values.get("src-address-list"); dst_name = values.get("dst-address-list")
+            raw_src = values.get("src-address", src_name or "any"); raw_dst = values.get("dst-address", dst_name or "any")
+            src_negate = raw_src.startswith("!"); dst_negate = raw_dst.startswith("!")
+            raw_src = raw_src.removeprefix("!"); raw_dst = raw_dst.removeprefix("!")
+            in_names = [values["in-interface"]] if values.get("in-interface") else interface_lists.get(values.get("in-interface-list", ""), [])
+            out_names = [values["out-interface"]] if values.get("out-interface") else interface_lists.get(values.get("out-interface-list", ""), [])
+            supported = {"chain", "action", "disabled", "src-address", "dst-address", "src-address-list",
+                         "dst-address-list", "protocol", "dst-port", "in-interface", "out-interface",
+                         "in-interface-list", "out-interface-list", "connection-state", "jump-target", "comment"}
+            confidence = Confidence.PARTIAL if set(values) - supported else Confidence.EXACT
+            policies.append(Policy(id=f"{device.id}:filter:{number}", device=device.id,
+                name=values.get("comment", chain), sequence=number, order=len(policies) + 1,
+                src=address_values.get(src_name, [raw_src]), dst=address_values.get(dst_name, [raw_dst]),
+                src_negate=src_negate, dst_negate=dst_negate,
+                protocol=[values.get("protocol", "ip")], dst_ports=values.get("dst-port", "any").split(","),
+                action=canonical_action, direction="forward" if chain == "forward" else "unknown",
+                interface=values.get("in-interface") or values.get("out-interface"),
+                in_interfaces=in_names, out_interfaces=out_names,
+                chain_id=f"routeros:{chain}", default_action="permit" if chain == "forward" else "unknown",
+                terminal=terminal, jump_target=values.get("jump-target"),
+                states=values.get("connection-state", "").split(",") if values.get("connection-state") else [],
+                entrypoint=chain == "forward", confidence=confidence, trace=self.trace(number, raw, line_end)))
         segments: list[Segment] = []
         for interface in interfaces.values():
+            interface.vrf = None if interface_vrfs.get(interface.name) in {None, "main"} else interface_vrfs[interface.name]
             interface.segment_id = f"{device.id}-{slug(interface.name)}"
             segments.append(Segment(id=interface.segment_id, name=interface.name,
                 type="vlan" if interface.vlan_id is not None else "interface", device=device.id,
-                vlan_id=interface.vlan_id, networks=interface_networks(interface.addresses)))
+                vlan_id=interface.vlan_id, networks=interface_networks(interface.addresses), vrf=interface.vrf))
             if interface.vlan_id in vlans:
                 vlans[interface.vlan_id].subnets = interface_networks(interface.addresses)
         objects = [AddressObject(device=device.id, name=name, values=values) for name, values in address_values.items()]

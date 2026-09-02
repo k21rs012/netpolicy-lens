@@ -4,7 +4,7 @@ import ipaddress
 import re
 from collections import defaultdict
 
-from ..models import CanonicalConfig, Device, Interface, ParserCapabilities, ParserWarning, Policy, Route, Segment, VLAN
+from ..models import CanonicalConfig, Confidence, Device, Interface, ParserCapabilities, ParserWarning, Policy, Route, Segment, VLAN
 from .base import BaseConfigParser
 from .common import hostname_from, interface_networks, slug, wildcard_to_network
 from .registry import ParserRegistry
@@ -25,11 +25,16 @@ def _address(tokens: list[str], pos: int) -> tuple[str, int]:
     return value, pos + 1
 
 
-def parse_acl_rule(parser: BaseConfigParser, device: str, acl: str, line: str, number: int, previous: int) -> Policy | None:
+def parse_acl_rule(parser: BaseConfigParser, device: str, acl: str, line: str, number: int,
+                   previous: int, standard: bool = False) -> Policy | None:
     tokens = line.split(); pos = 0; sequence = previous + 10
     if tokens and tokens[0].isdigit(): sequence = int(tokens[0]); pos += 1
     if pos >= len(tokens) or tokens[pos] not in ("permit", "deny"): return None
     action = tokens[pos]; pos += 1
+    if standard:
+        src, _ = _address(tokens, pos)
+        return Policy(id=f"{device}:{acl}:{sequence}", device=device, name=acl, sequence=sequence,
+            src=[src], dst=["any"], protocol=["ip"], action=action, trace=parser.trace(number, line))
     protocol = tokens[pos] if pos < len(tokens) else "ip"; pos += 1
     src, pos = _address(tokens, pos); src_ports = ["any"]
     if pos < len(tokens) and tokens[pos] in ("eq", "range", "gt", "lt", "neq"):
@@ -39,9 +44,14 @@ def parse_acl_rule(parser: BaseConfigParser, device: str, acl: str, line: str, n
     if pos < len(tokens) and tokens[pos] in ("eq", "range", "gt", "lt", "neq"):
         op = tokens[pos]; pos += 1; values = tokens[pos:pos + (2 if op == "range" else 1)]
         dst_ports = [values[0] if op == "eq" else f"{op} {'-'.join(values)}"]
+        pos += len(values)
+    remaining = [token for token in tokens[pos:] if token not in {"log", "log-input"}]
+    states = ["established"] if "established" in remaining else []
+    remaining = [token for token in remaining if token != "established"]
     return Policy(id=f"{device}:{acl}:{sequence}", device=device, name=acl, sequence=sequence,
         src=[src], dst=[dst], protocol=[protocol], src_ports=src_ports, dst_ports=dst_ports,
-        action=action, trace=parser.trace(number, line))
+        action=action, states=states, confidence=Confidence.PARTIAL if remaining else Confidence.EXACT,
+        trace=parser.trace(number, line))
 
 
 class CampusSwitchParser(BaseConfigParser):
@@ -57,9 +67,11 @@ class CampusSwitchParser(BaseConfigParser):
         hostname = hostname_from(self.config, self.source_file); device_id = slug(hostname)
         device = Device(id=device_id, hostname=hostname, vendor=self.vendor, network_os=self.network_os,
             platform=self.platform, source_file=self.source_file)
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^router (?:ospf|ospfv3|bgp|isis|rip)\b", self.config))
         interfaces: list[Interface] = []; vlans: list[VLAN] = []; routes: list[Route] = []
         policies: list[Policy] = []; warnings: list[ParserWarning] = []
         current_if: Interface | None = None; current_vlan: VLAN | None = None; current_acl: str | None = None; acl_seq = 0
+        current_acl_standard = False
         for number, raw in enumerate(self.lines, 1):
             line = raw.strip()
             if not line or line in ("!", "exit") or line.startswith("#"): continue
@@ -70,7 +82,8 @@ class CampusSwitchParser(BaseConfigParser):
                 current_vlan = VLAN(device=device_id, id=int(match.group(1)), name=f"VLAN{match.group(1)}", trace=self.trace(number, raw))
                 vlans.append(current_vlan); current_if = None; current_acl = None; continue
             if match := re.match(self.acl_pattern, line, re.I):
-                current_acl = match.group(1); current_if = None; current_vlan = None; acl_seq = 0; continue
+                current_acl = match.group(1); current_acl_standard = bool(re.search(r"\baccess-list\s+standard\b", line, re.I))
+                current_if = None; current_vlan = None; acl_seq = 0; continue
             if not raw.startswith((" ", "\t")):
                 current_if = None; current_vlan = None; current_acl = None
             if current_if:
@@ -97,7 +110,7 @@ class CampusSwitchParser(BaseConfigParser):
             if current_vlan and (match := re.match(r"name\s+(.+)", line)):
                 current_vlan.name = match.group(1); continue
             if current_acl and re.match(r"(?:\d+\s+)?(?:permit|deny)\s+", line):
-                policy = parse_acl_rule(self, device_id, current_acl, line, number, acl_seq)
+                policy = parse_acl_rule(self, device_id, current_acl, line, number, acl_seq, current_acl_standard)
                 if policy: policies.append(policy); acl_seq = policy.sequence
                 else: warnings.append(ParserWarning(device=device_id, line=number, config=line, reason="unsupported ACL rule", parser=self.parser_id))
                 continue
@@ -124,12 +137,21 @@ class CampusSwitchParser(BaseConfigParser):
                 iface.segment_id = f"{device_id}-if-{slug(iface.name)}"
                 segments.append(Segment(id=iface.segment_id, name=iface.description or iface.name, type="interface",
                     device=device_id, networks=interface_networks(iface.addresses)))
-        bindings = {name: (iface.name, direction, iface.segment_id) for iface in interfaces
-            for direction, names in (("in", iface.acl_in), ("out", iface.acl_out)) for name in names}
+        bindings = [(name, iface.name, direction, iface.segment_id) for iface in interfaces
+            for direction, names in (("in", iface.acl_in), ("out", iface.acl_out)) for name in names]
+        bound_policies: list[Policy] = []
         for policy in policies:
-            if policy.name in bindings:
-                policy.interface, policy.direction, segment_id = bindings[policy.name]
-                if segment_id and policy.direction == "in": policy.src_segments = [segment_id]
+            matches = [binding for binding in bindings if binding[0] == policy.name]
+            if not matches: bound_policies.append(policy); continue
+            for index, (_, interface, direction, segment_id) in enumerate(matches):
+                item = policy.model_copy(deep=True)
+                item.interface, item.direction = interface, direction
+                item.chain_id = f"{direction}:{interface}:{item.name}"
+                if len(matches) > 1: item.id = f"{policy.id}:{direction}:{interface}"
+                if segment_id and direction == "in": item.src_segments = [segment_id]
+                if segment_id and direction == "out": item.dst_segments = [segment_id]
+                bound_policies.append(item)
+        policies = bound_policies
         return CanonicalConfig(device=device, interfaces=interfaces, vlans=vlans, segments=segments,
             routes=routes, policies=policies, warnings=warnings)
 
@@ -255,7 +277,9 @@ class AlliedWarePlusParser(CampusSwitchParser):
                 if iface:
                     iface.acl_in.append(match.group(1))
                     for policy in result.policies:
-                        if policy.name == match.group(1): policy.interface = iface.name; policy.direction = "in"; policy.src_segments = [iface.segment_id] if iface.segment_id else []
+                        if policy.name == match.group(1):
+                            policy.interface = iface.name; policy.direction = "in"; policy.src_segments = [iface.segment_id] if iface.segment_id else []
+                            policy.chain_id = f"in:{iface.name}:{policy.name}"
             if current_classifier and (match := re.match(r"match access-group\s+(\S+)", line)):
                 classifier_acls[current_classifier].append(match.group(1))
             if current_filter and indented and (match := re.match(r"classifier\s+(\S+)", line)):
@@ -275,5 +299,7 @@ class AlliedWarePlusParser(CampusSwitchParser):
                 for policy in result.policies:
                     if policy.name == acl_name:
                         policy.interface = iface.name; policy.direction = direction
+                        policy.chain_id = f"{direction}:{iface.name}:{policy.name}"
                         if iface.segment_id and direction == "in": policy.src_segments = [iface.segment_id]
+                        if iface.segment_id and direction == "out": policy.dst_segments = [iface.segment_id]
         return result

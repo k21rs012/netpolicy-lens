@@ -25,7 +25,16 @@ def _network_coverage(policy_values: list[str], segment: Segment) -> Coverage:
     unresolved = False
     for value in policy_values:
         try: policy_networks.append(ipaddress.ip_network(value, strict=False))
-        except ValueError: unresolved = True
+        except ValueError:
+            if "-" in value:
+                first, last = value.split("-", 1)
+                try:
+                    policy_networks.extend(ipaddress.summarize_address_range(
+                        ipaddress.ip_address(first), ipaddress.ip_address(last)))
+                    continue
+                except ValueError:
+                    pass
+            unresolved = True
     if not segment.networks:
         return "PARTIAL" if policy_values else "NONE"
     segment_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
@@ -56,6 +65,8 @@ def policy_coverage(policy: Policy, src: Segment, dst: Segment) -> Coverage:
     if not policy.dst_segments and dst.device != policy.device: return "NONE"
     src_coverage = _network_coverage(policy.src, src)
     dst_coverage = _network_coverage(policy.dst, dst)
+    if policy.src_negate: src_coverage = {"FULL": "NONE", "NONE": "FULL", "PARTIAL": "PARTIAL"}[src_coverage]
+    if policy.dst_negate: dst_coverage = {"FULL": "NONE", "NONE": "FULL", "PARTIAL": "PARTIAL"}[dst_coverage]
     if "NONE" in (src_coverage, dst_coverage): return "NONE"
     return "PARTIAL" if "PARTIAL" in (src_coverage, dst_coverage) else "FULL"
 
@@ -71,6 +82,8 @@ def _service_labels(policy: Policy) -> list[str]:
 
 
 def _policy_chain(policy: Policy) -> tuple[str, ...]:
+    if policy.chain_id:
+        return policy.device, policy.chain_id
     if policy.direction == "zone":
         return policy.device, "zone", policy.from_zone or "", policy.to_zone or ""
     return policy.device, policy.direction, policy.interface or "", policy.name
@@ -80,9 +93,12 @@ def effective_policies(policies: list[Policy], src: Segment, dst: Segment) -> li
     """Apply first-match semantics per policy chain and exact service label."""
     seen: set[tuple[tuple[str, ...], str]] = set()
     effective: list[tuple[Policy, Coverage, list[str]]] = []
-    for policy in sorted(policies, key=lambda item: (item.device, _policy_chain(item), item.sequence)):
+    for policy in sorted((item for item in policies if item.enabled),
+                         key=lambda item: (item.device, _policy_chain(item), item.order if item.order is not None else item.sequence)):
         coverage = policy_coverage(policy, src, dst)
         if coverage == "NONE": continue
+        if policy.action in {"continue", "return"} or not policy.terminal:
+            continue
         chain = _policy_chain(policy); labels: list[str] = []
         for label in _service_labels(policy):
             key = chain, label
@@ -94,7 +110,9 @@ def effective_policies(policies: list[Policy], src: Segment, dst: Segment) -> li
 
 def build_matrix(configs: list[CanonicalConfig]) -> list[MatrixCell]:
     segments = [s for cfg in configs for s in cfg.segments]
-    policies = [p for cfg in configs for p in cfg.policies]
+    definition_only_os = {"ios", "ios-xe", "nx-os", "aos-cx", "eos", "alliedware-plus", "rtx", "exos", "voss"}
+    policies = [p for cfg in configs for p in cfg.policies
+                if not (p.direction == "unknown" and cfg.device.network_os in definition_only_os)]
     cells: list[MatrixCell] = []
     for src in segments:
         for dst in segments:
@@ -103,6 +121,9 @@ def build_matrix(configs: list[CanonicalConfig]) -> list[MatrixCell]:
             matching = effective_policies(policies, src, dst)
             allowed = [label for policy, _, labels in matching if policy.action == "permit" for label in labels]
             denied = [label for policy, _, labels in matching if policy.action in ("deny", "reject", "restrict") for label in labels]
+            # A deny in any applied chain overrides a permit for that same
+            # service; keep mixed services as PARTIAL.
+            allowed = [label for label in allowed if label not in denied]
             partial = any(coverage == "PARTIAL" for _, coverage, _ in matching)
             result = "PARTIAL" if partial or allowed and denied else "ALLOW" if allowed else "DENY" if denied else "UNKNOWN"
             traces = [{"device": policy.device, "interface": policy.interface, "policy": policy.name, "sequence": policy.sequence,

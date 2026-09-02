@@ -1394,6 +1394,7 @@ function TopologyView() {
   const [dst, setDst] = useState("");
   const [protocol, setProtocol] = useState("tcp");
   const [port, setPort] = useState("443");
+  const [state, setState] = useState("new");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -1412,7 +1413,7 @@ function TopologyView() {
     setBusy(true);
     setError("");
     try {
-      setResult(await api.reachability(src, dst, protocol, port));
+      setResult(await api.reachability(src, dst, protocol, port, state));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1600,6 +1601,14 @@ function TopologyView() {
               placeholder="any"
             />
           </label>
+          <label>
+            State
+            <select value={state} onChange={(e) => setState(e.target.value)}>
+              <option value="new">new</option>
+              <option value="established">established</option>
+              <option value="related">related</option>
+            </select>
+          </label>
           <button className="primary" onClick={analyze} disabled={busy}>
             {busy ? <RefreshCw className="spin" /> : <Route />}経路を解析
           </button>
@@ -1617,6 +1626,7 @@ function TopologyView() {
               <span>
                 {result.protocol.toUpperCase()}
                 {result.port ? ` / ${result.port}` : ""}
+                {` / ${result.state}`}
               </span>
               <small>設定ベースの静的推定結果</small>
             </div>
@@ -1656,6 +1666,8 @@ function TopologyView() {
                   </div>
                   <div className="hop-reason">
                     <b>{step.reason}</b>
+                    <small>route: {step.route || "connected/inferred"}</small>
+                    {!!step.nat?.length && <small>NAT: {step.nat.map((item) => item.name).join(", ")}</small>}
                     {step.trace && (
                       <>
                         <code>{step.trace.raw_config}</code>
@@ -1673,7 +1685,7 @@ function TopologyView() {
         )}
         <p className="topology-note">
           <CircleHelp />
-          動的ルーティング、物理配線、稼働状態は含まれません。根拠不足はUNKNOWNとして扱います。
+          静的ルートと設定上のNAT・通信stateを評価します。動的ルーティング、物理配線、実際の稼働状態は含まれず、根拠不足はUNKNOWNとして扱います。
         </p>
       </section>
     </div>

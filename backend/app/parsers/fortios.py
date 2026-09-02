@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from ..models import (
-    AddressObject, CanonicalConfig, Device, Interface, NATRule, ParserCapabilities,
+    AddressObject, CanonicalConfig, Confidence, Device, Interface, NATRule, ParserCapabilities,
     ParserWarning, Policy, Route, Segment, ServiceObject, VLAN, Zone,
 )
 from .base import BaseConfigParser
@@ -103,6 +103,7 @@ class FortiOSParser(BaseConfigParser):
         device_id = slug(hostname)
         device = Device(id=device_id, hostname=hostname, vendor="fortinet", network_os="fortios",
                         platform="FortiGate", source_file=self.source_file)
+        device.features["dynamic_routing"] = any(block.section in {"router ospf", "router ospf6", "router bgp", "router rip"} for block in blocks)
         for warning in unsupported: warning.device = device_id
         warnings: list[ParserWarning] = []
 
@@ -113,6 +114,7 @@ class FortiOSParser(BaseConfigParser):
             values = block.values
             iface = Interface(device=device_id, name=block.name,
                 description=(values.get("description") or values.get("alias") or [None])[0],
+                vrf=(values.get("vrf") or [None])[0],
                 trace=self._block_trace(block))
             if len(values.get("ip", [])) >= 2:
                 iface.addresses.append(f"{values['ip'][0]}/{mask_to_prefix(values['ip'][1])}")
@@ -184,14 +186,15 @@ class FortiOSParser(BaseConfigParser):
         segments: list[Segment] = []
         for zone in zones:
             networks = [net for name in zone.interfaces if name in iface_by_name for net in interface_networks(iface_by_name[name].addresses)]
-            segments.append(Segment(id=zone.segment_id, name=zone.name.upper(), type="zone", device=device_id, networks=networks))
+            segments.append(Segment(id=zone.segment_id, name=zone.name.upper(), type="zone", device=device_id, networks=networks,
+                vrf=next((iface_by_name[name].vrf for name in zone.interfaces if name in iface_by_name and iface_by_name[name].vrf), None)))
             for name in zone.interfaces:
                 if name in iface_by_name: iface_by_name[name].segment_id = zone.segment_id
         for iface in interfaces:
             if not iface.segment_id:
                 iface.segment_id = f"{device_id}-if-{slug(iface.name)}"
                 segments.append(Segment(id=iface.segment_id, name=iface.name.upper(), type="vlan" if iface.vlan_id else "interface",
-                    device=device_id, vlan_id=iface.vlan_id, networks=interface_networks(iface.addresses)))
+                    device=device_id, vlan_id=iface.vlan_id, networks=interface_networks(iface.addresses), vrf=iface.vrf))
 
         segment_by_name = {s.name.lower(): s.id for s in segments}
         segment_by_name.update({i.name.lower(): i.segment_id for i in interfaces if i.segment_id})
@@ -222,20 +225,43 @@ class FortiOSParser(BaseConfigParser):
                     result.add(name)
             return result
 
-        for sequence, block in enumerate([b for b in blocks if b.section == "firewall policy"], 1):
+        policy_blocks = [b for b in blocks if b.section == "firewall policy"]
+        policy_order = [block.name for block in policy_blocks]
+        section = ""
+        for raw in self.lines:
+            line = raw.strip()
+            if line == "config firewall policy": section = "firewall policy"; continue
+            if line == "end" and section: section = ""; continue
+            if section != "firewall policy": continue
+            if match := re.match(r"move\s+(\S+)\s+(before|after)\s+(\S+)", line):
+                item, where, anchor = match.groups()
+                if item in policy_order and anchor in policy_order and item != anchor:
+                    policy_order.remove(item); index = policy_order.index(anchor)
+                    policy_order.insert(index + (1 if where == "after" else 0), item)
+        by_policy_id = {block.name: block for block in policy_blocks}
+        ordered_policy_blocks = [by_policy_id[name] for name in policy_order]
+        for order, block in enumerate(ordered_policy_blocks, 1):
             if (block.values.get("status") or ["enable"])[0] == "disable":
                 continue
             source_names = block.values.get("srcintf", []); destination_names = block.values.get("dstintf", [])
             protocols, ports = resolve_services(block.values.get("service", []))
             action = (block.values.get("action") or ["deny"])[0]
             canonical_action = "permit" if action in ("accept", "allow") else "deny" if action == "deny" else "unknown"
+            supported_fields = {"name", "status", "srcintf", "dstintf", "srcaddr", "dstaddr", "service",
+                                "action", "nat", "comments", "logtraffic", "schedule", "srcaddr-negate", "dstaddr-negate"}
+            partial = bool(set(block.values) - supported_fields)
+            if block.values.get("schedule") and block.values["schedule"][0].lower() != "always": partial = True
             policy = Policy(id=f"{device_id}:policy:{block.name}", device=device_id,
                 name=(block.values.get("name") or [f"policy-{block.name}"])[0],
-                sequence=int(block.name) if block.name.isdigit() else sequence,
+                sequence=int(block.name) if block.name.isdigit() else order, order=order,
                 src=resolve_addresses(block.values.get("srcaddr", [])), dst=resolve_addresses(block.values.get("dstaddr", [])),
+                src_negate=(block.values.get("srcaddr-negate") or ["disable"])[0] == "enable",
+                dst_negate=(block.values.get("dstaddr-negate") or ["disable"])[0] == "enable",
                 src_segments=[segment_by_name[x.lower()] for x in source_names if x.lower() in segment_by_name],
                 dst_segments=[segment_by_name[x.lower()] for x in destination_names if x.lower() in segment_by_name],
                 protocol=protocols, dst_ports=ports, action=canonical_action, direction="zone",
+                chain_id="fortios:policy",
+                confidence=Confidence.PARTIAL if partial else Confidence.EXACT,
                 from_zone=", ".join(source_names) or None, to_zone=", ".join(destination_names) or None,
                 trace=self._block_trace(block))
             policies.append(policy)
@@ -256,7 +282,10 @@ class FortiOSParser(BaseConfigParser):
             dest = _network(destination[0], destination[1]) if len(destination) >= 2 else destination[0]
             routes.append(Route(device=device_id, destination=dest,
                 next_hop=(block.values.get("gateway") or block.values.get("gateway6") or [None])[0],
-                interface=(block.values.get("device") or [None])[0], trace=self._block_trace(block)))
+                interface=(block.values.get("device") or [None])[0],
+                vrf=(block.values.get("vrf") or [None])[0],
+                metric=int(block.values["distance"][0]) if block.values.get("distance") and block.values["distance"][0].isdigit() else None,
+                trace=self._block_trace(block)))
         return CanonicalConfig(device=device, interfaces=interfaces, vlans=vlans, segments=segments, zones=zones,
             routes=routes, policies=policies, nat=nat_rules, address_objects=address_objects,
             service_objects=service_objects, warnings=warnings, unsupported=unsupported)

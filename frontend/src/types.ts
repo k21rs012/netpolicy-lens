@@ -175,6 +175,9 @@ export interface ReachabilityStep {
   result: Result;
   reason: string;
   policy: string | null;
+  route?: string;
+  nat?: { name: string; type: string; translated_src?: string; translated_dst?: string; translated_port?: number }[];
+  chains?: { result: Result; reason: string; policy: string | null; chain?: string }[];
   trace?: {
     source_file: string;
     line_start: number;
@@ -188,6 +191,7 @@ export interface ReachabilityData {
   destination: string;
   protocol: string;
   port: number | null;
+  state: string;
   result: Result;
   path: string[];
   steps: ReachabilityStep[];

@@ -4,7 +4,7 @@ import ipaddress
 import re
 from collections import defaultdict
 
-from ..models import AddressObject, CanonicalConfig, Device, Interface, NATRule, ParserCapabilities, ParserWarning, Policy, Route, Segment, ServiceObject, Trace, VLAN, Zone
+from ..models import AddressObject, CanonicalConfig, Confidence, Device, Interface, NATRule, ParserCapabilities, ParserWarning, Policy, Route, Segment, ServiceObject, Trace, VLAN, Zone
 from .base import BaseConfigParser
 from .common import hostname_from, interface_networks, slug
 from .junos_hier import hierarchical_to_set, is_hierarchical_junos
@@ -53,15 +53,23 @@ class JunosBaseParser(BaseConfigParser):
     def parse(self) -> CanonicalConfig:
         hostname = hostname_from(self.config, self.source_file); device_id = slug(hostname)
         device = Device(id=device_id, hostname=hostname, vendor="juniper", network_os=self.network_os, source_file=self.source_file)
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^set protocols (?:ospf|ospf3|bgp|isis|rip)\b", self.config))
         ifaces: dict[str, Interface] = {}; zones: dict[str, Zone] = {}; addresses: list[AddressObject] = []; routes: list[Route] = []
         custom_apps: dict[str, dict[str, str]] = defaultdict(dict); app_sets: dict[str, list[str]] = defaultdict(list)
         address_sets: dict[str, list[str]] = defaultdict(list)
+        interface_vrfs: dict[str, str] = {}
         vlan_data: dict[str, dict[str, str]] = defaultdict(dict); nat_pools: dict[tuple[str, str], dict[str, str]] = defaultdict(dict)
         nat_data: dict[tuple[str, str, str], dict[str, str | int]] = defaultdict(dict)
-        policy_data: dict[tuple[str, str, str], dict] = defaultdict(lambda: {"src": [], "dst": [], "apps": [], "action": "unknown", "line": 0, "raw": ""})
+        policy_data: dict[tuple[str, str, str], dict] = defaultdict(lambda: {"src": [], "dst": [], "apps": [], "action": "unknown", "line": 0, "raw": "", "partial": False})
+        global_policy_data: dict[str, dict] = defaultdict(lambda: {"from": [], "to": [], "src": [], "dst": [], "apps": [], "action": "unknown", "line": 0, "raw": "", "partial": False})
         unsupported: list[ParserWarning] = []
+        applied_groups = {match.group(1) for raw in self.lines
+                          if (match := re.match(r"set apply-groups\s+(\S+)", raw.strip()))}
         for n, raw in enumerate(self.lines, 1):
             line = raw.strip()
+            if match := re.match(r"set groups (\S+) (.+)", line):
+                if match.group(1) not in applied_groups: continue
+                line = "set " + match.group(2)
             if match := re.match(r"set interfaces (\S+) unit (\S+) family (inet6?|ethernet-switching) address (\S+)", line):
                 name = f"{match.group(1)}.{match.group(2)}"; iface = ifaces.setdefault(name, Interface(device=device_id, name=name, trace=self.trace(n, raw)))
                 if match.group(4) not in iface.addresses: iface.addresses.append(match.group(4))
@@ -83,6 +91,8 @@ class JunosBaseParser(BaseConfigParser):
                 vlan_data[match.group(1)]["id"] = match.group(2)
             elif match := re.match(r"set vlans (\S+) l3-interface (\S+)", line):
                 vlan_data[match.group(1)]["interface"] = match.group(2)
+            elif match := re.match(r"set routing-instances (\S+) interface (\S+)", line):
+                interface_vrfs[match.group(2)] = match.group(1)
             elif match := re.match(r"set security nat destination pool (\S+) address port (\d+)", line):
                 nat_pools[("destination", match.group(1))]["port"] = match.group(2)
             elif match := re.match(r"set security nat (source|destination) pool (\S+) address (\S+)", line):
@@ -97,14 +107,28 @@ class JunosBaseParser(BaseConfigParser):
                 key = match.group(1), match.group(2), match.group(3); data = policy_data[key]; data[{"source-address": "src", "destination-address": "dst", "application": "apps"}[match.group(4)]].extend(match.group(5).strip("[]").split()); data["line"] = n; data["raw"] = raw
             elif match := re.match(r"set security policies from-zone (\S+) to-zone (\S+) policy (\S+) then (permit|deny|reject)", line):
                 key = match.group(1), match.group(2), match.group(3); policy_data[key]["action"] = match.group(4); policy_data[key]["line"] = n; policy_data[key]["raw"] = raw
+            elif match := re.match(r"set security policies global policy (\S+) match (from-zone|to-zone|source-address|destination-address|application) (.+)", line):
+                name, field, values = match.groups(); data = global_policy_data[name]
+                key = {"from-zone": "from", "to-zone": "to", "source-address": "src",
+                       "destination-address": "dst", "application": "apps"}[field]
+                data[key].extend(values.strip("[]").split()); data["line"] = n; data["raw"] = raw
+            elif match := re.match(r"set security policies global policy (\S+) then (permit|deny|reject)", line):
+                data = global_policy_data[match.group(1)]; data["action"] = match.group(2); data["line"] = n; data["raw"] = raw
+            elif match := re.match(r"set security policies from-zone (\S+) to-zone (\S+) policy (\S+) match \S+ .+", line):
+                policy_data[(match.group(1), match.group(2), match.group(3))]["partial"] = True
+            elif match := re.match(r"set security policies global policy (\S+) match \S+ .+", line):
+                global_policy_data[match.group(1)]["partial"] = True
             elif match := re.match(r"set (?:routing-options|routing-options rib \S+) static route (\S+) (?:next-hop|qualified-next-hop) (\S+)", line):
                 routes.append(Route(device=device_id, destination=match.group(1), next_hop=match.group(2), trace=self.trace(n, raw)))
             elif match := re.match(r"set routing-instances \S+ routing-options static route (\S+) (?:next-hop|qualified-next-hop) (\S+)", line):
-                routes.append(Route(device=device_id, destination=match.group(1), next_hop=match.group(2), trace=self.trace(n, raw)))
+                instance = line.split()[2]
+                routes.append(Route(device=device_id, destination=match.group(1), next_hop=match.group(2), vrf=instance, trace=self.trace(n, raw)))
             elif line.startswith(("set security policies ", "set security nat ", "set security zones ")):
                 unsupported.append(ParserWarning(device=device_id, line=self.trace(n, raw).line_start,
                     config=line, reason="unsupported security statement", parser=self.parser_id))
         vlans: list[VLAN] = []
+        for name, vrf in interface_vrfs.items():
+            if name in ifaces: ifaces[name].vrf = vrf
         for name, data in vlan_data.items():
             if "id" not in data: continue
             vlan_id = int(data["id"]); interface = data.get("interface")
@@ -115,7 +139,8 @@ class JunosBaseParser(BaseConfigParser):
                 gateway=iface.addresses[0].split("/")[0] if iface and iface.addresses else None,
                 trace=iface.trace if iface else None))
         segments = [Segment(id=z.segment_id, name=z.name.upper(), type="zone", device=device_id,
-                            networks=[net for name in z.interfaces if name in ifaces for net in interface_networks(ifaces[name].addresses)]) for z in zones.values()]
+                            networks=[net for name in z.interfaces if name in ifaces for net in interface_networks(ifaces[name].addresses)],
+                            vrf=next((ifaces[name].vrf for name in z.interfaces if name in ifaces and ifaces[name].vrf), None)) for z in zones.values()]
         for z in zones.values():
             for name in z.interfaces:
                 if name in ifaces: ifaces[name].zone = z.name; ifaces[name].segment_id = z.segment_id
@@ -124,7 +149,7 @@ class JunosBaseParser(BaseConfigParser):
             if iface and not iface.segment_id:
                 iface.segment_id = f"{device_id}-vlan-{vlan.id}"
                 segments.append(Segment(id=iface.segment_id, name=vlan.name, type="vlan", device=device_id,
-                    vlan_id=vlan.id, networks=vlan.subnets))
+                    vlan_id=vlan.id, networks=vlan.subnets, vrf=iface.vrf))
         policies: list[Policy] = []
         warnings: list[ParserWarning] = []
         address_values = {item.name: item.values for item in addresses}
@@ -135,6 +160,13 @@ class JunosBaseParser(BaseConfigParser):
             if name in address_values: return address_values[name]
             return [value for member in address_sets.get(name, [])
                     for value in resolve_address_set(member, seen | {name})]
+
+        def resolve_policy_addresses(names: list[str]) -> list[str]:
+            result: list[str] = []
+            for name in names or ["any"]:
+                resolved = resolve_address_set(name)
+                result.extend(resolved or [name])
+            return list(dict.fromkeys(result))
 
         addresses.extend(AddressObject(device=device_id, name=name, values=resolve_address_set(name))
             for name in address_sets)
@@ -165,7 +197,10 @@ class JunosBaseParser(BaseConfigParser):
             policies.append(Policy(id=f"{device_id}:{from_zone}:{to_zone}:{name}", device=device_id, name=name, sequence=seq,
                 src=data["src"] or ["any"], dst=data["dst"] or ["any"], src_segments=[zones[from_zone].segment_id] if from_zone in zones else [],
                 dst_segments=[zones[to_zone].segment_id] if to_zone in zones else [], protocol=list(dict.fromkeys(protocols)), dst_ports=list(dict.fromkeys(ports)),
-                action=data["action"], direction="zone", from_zone=from_zone, to_zone=to_zone, trace=self.trace(data["line"], data["raw"])))
+                action=data["action"], direction="zone", from_zone=from_zone, to_zone=to_zone,
+                chain_id=f"zone:{from_zone}:{to_zone}",
+                confidence=Confidence.PARTIAL if data["partial"] else Confidence.EXACT,
+                trace=self.trace(data["line"], data["raw"])))
             for reference in [*data["src"], *data["dst"]]:
                 if not known_address(reference):
                     warnings.append(ParserWarning(device=device_id, line=self.trace(data["line"], data["raw"]).line_start,
@@ -174,6 +209,27 @@ class JunosBaseParser(BaseConfigParser):
                 if zone_name not in zones and zone_name != "junos-host":
                     warnings.append(ParserWarning(device=device_id, line=self.trace(data["line"], data["raw"]).line_start,
                         config=data["raw"].strip(), reason=f"unresolved zone reference: {zone_name}", parser=self.parser_id))
+        sequence = len(policies)
+        zone_names = list(zones)
+        for name, data in global_policy_data.items():
+            from_zones = data["from"] or zone_names
+            to_zones = data["to"] or zone_names
+            protocols: list[str] = []; ports: list[str] = []
+            for app in data["apps"] or ["any"]:
+                for proto, port in resolve_app(app): protocols.append(proto); ports.append(port)
+            for from_zone in from_zones:
+                for to_zone in to_zones:
+                    if from_zone not in zones or to_zone not in zones: continue
+                    sequence += 1
+                    policies.append(Policy(id=f"{device_id}:global:{name}:{from_zone}:{to_zone}", device=device_id,
+                        name=name, sequence=sequence, order=1_000_000 + sequence,
+                        src=data["src"] or ["any"], dst=data["dst"] or ["any"],
+                        src_segments=[zones[from_zone].segment_id], dst_segments=[zones[to_zone].segment_id],
+                        protocol=list(dict.fromkeys(protocols)), dst_ports=list(dict.fromkeys(ports)),
+                        action=data["action"], direction="zone", from_zone=from_zone, to_zone=to_zone,
+                        chain_id=f"zone:{from_zone}:{to_zone}",
+                        confidence=Confidence.PARTIAL if data["partial"] else Confidence.EXACT,
+                        trace=self.trace(data["line"], data["raw"])))
         services = [ServiceObject(device=device_id, name=k, protocol=v[0], ports=[v[1]]) for k, v in APPS.items()]
         services.extend(ServiceObject(device=device_id, name=name, protocol=data.get("protocol", "any"), ports=[data.get("destination-port", "any")]) for name, data in custom_apps.items())
         nat_rules: list[NATRule] = []

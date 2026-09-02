@@ -29,6 +29,7 @@ class Device(BaseModel):
     source_file: str
     site: str | None = None
     confidence: float = 0.0
+    features: dict[str, bool] = Field(default_factory=dict)
 
 
 class Interface(BaseModel):
@@ -42,6 +43,9 @@ class Interface(BaseModel):
     segment_id: str | None = None
     acl_in: list[str] = Field(default_factory=list)
     acl_out: list[str] = Field(default_factory=list)
+    security_level: int | None = None
+    vrf: str | None = None
+    policy_route_map: str | None = None
     trace: Trace | None = None
 
 
@@ -61,6 +65,7 @@ class Segment(BaseModel):
     device: str
     vlan_id: int | None = None
     networks: list[str] = Field(default_factory=list)
+    vrf: str | None = None
 
 
 class Zone(BaseModel):
@@ -76,6 +81,9 @@ class Route(BaseModel):
     destination: str
     next_hop: str | None = None
     interface: str | None = None
+    metric: int | None = None
+    vrf: str | None = None
+    policy: str | None = None
     trace: Trace | None = None
 
 
@@ -91,12 +99,24 @@ class Policy(BaseModel):
     protocol: list[str] = Field(default_factory=lambda: ["ip"])
     src_ports: list[str] = Field(default_factory=lambda: ["any"])
     dst_ports: list[str] = Field(default_factory=lambda: ["any"])
-    action: Literal["permit", "deny", "reject", "restrict", "unknown"]
-    direction: Literal["in", "out", "zone", "unknown"] = "unknown"
+    src_negate: bool = False
+    dst_negate: bool = False
+    action: Literal["permit", "deny", "reject", "restrict", "continue", "jump", "return", "unknown"]
+    direction: Literal["in", "out", "zone", "forward", "global", "unknown"] = "unknown"
     interface: str | None = None
+    in_interfaces: list[str] = Field(default_factory=list)
+    out_interfaces: list[str] = Field(default_factory=list)
     from_zone: str | None = None
     to_zone: str | None = None
     confidence: Confidence = Confidence.EXACT
+    chain_id: str | None = None
+    order: int | None = None
+    default_action: Literal["permit", "deny", "reject", "unknown"] | None = None
+    enabled: bool = True
+    terminal: bool = True
+    jump_target: str | None = None
+    states: list[str] = Field(default_factory=list)
+    entrypoint: bool = True
     trace: Trace | None = None
 
 
