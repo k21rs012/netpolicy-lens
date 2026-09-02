@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import shlex
 
 
 def slug(value: str) -> str:
@@ -34,3 +35,25 @@ def interface_networks(addresses: list[str]) -> list[str]:
             pass
     return out
 
+
+def network_value(address: str, mask: str | None = None) -> str:
+    """Normalize an address/mask pair without discarding unknown syntax."""
+    try:
+        value = f"{address}/{mask_to_prefix(mask)}" if mask else address
+        return str(ipaddress.ip_network(value, strict=False))
+    except ValueError:
+        return address
+
+
+def key_value_tokens(line: str) -> dict[str, str]:
+    """Parse RouterOS-style key=value tokens with quoted values."""
+    values: dict[str, str] = {}
+    try:
+        tokens = shlex.split(line.replace("=\"", '=\"'))
+    except ValueError:
+        tokens = line.split()
+    for token in tokens:
+        if "=" in token:
+            key, value = token.split("=", 1)
+            values[key] = value.strip('"')
+    return values

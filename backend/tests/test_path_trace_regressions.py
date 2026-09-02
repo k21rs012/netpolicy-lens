@@ -281,3 +281,20 @@ def test_nat_effect_is_exposed_on_path_step():
                               original_dst="10.0.2.0/24", translated_src="192.0.2.10"))
     result = analyze_reachability([config], "edge-a", "edge-b", "tcp", 443)
     assert result["steps"][0]["nat"][0]["translated_src"] == "192.0.2.10"
+
+
+def test_stateful_session_requires_an_explicit_assumption():
+    config = _manual_config()
+    config.device.network_os = "panos"
+
+    unknown = analyze_reachability(
+        [config], "edge-a", "edge-b", "tcp", 443, "established"
+    )
+    assumed = analyze_reachability(
+        [config], "edge-a", "edge-b", "tcp", 443, "established", True
+    )
+
+    assert unknown["result"] == "UNKNOWN"
+    assert "セッションテーブル未取得" in unknown["steps"][0]["reason"]
+    assert assumed["result"] == "ALLOW"
+    assert assumed["assume_session"] is True

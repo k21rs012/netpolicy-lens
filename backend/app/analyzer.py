@@ -4,6 +4,7 @@ import ipaddress
 from typing import Literal
 
 from .models import CanonicalConfig, MatrixCell, Policy, Segment
+from .policy_utils import policy_chain_key, policy_order, service_labels
 
 
 def _is_any(value: str) -> bool:
@@ -71,36 +72,18 @@ def policy_coverage(policy: Policy, src: Segment, dst: Segment) -> Coverage:
     return "PARTIAL" if "PARTIAL" in (src_coverage, dst_coverage) else "FULL"
 
 
-def _service_labels(policy: Policy) -> list[str]:
-    labels: list[str] = []
-    for proto in policy.protocol:
-        for port in policy.dst_ports:
-            if proto in ("ip", "any", "*") and port in ("any", "*"): labels.append("ANY")
-            elif port in ("any", "*"): labels.append(proto.upper())
-            else: labels.append(f"{proto.upper()}/{port}")
-    return list(dict.fromkeys(labels))
-
-
-def _policy_chain(policy: Policy) -> tuple[str, ...]:
-    if policy.chain_id:
-        return policy.device, policy.chain_id
-    if policy.direction == "zone":
-        return policy.device, "zone", policy.from_zone or "", policy.to_zone or ""
-    return policy.device, policy.direction, policy.interface or "", policy.name
-
-
 def effective_policies(policies: list[Policy], src: Segment, dst: Segment) -> list[tuple[Policy, Coverage, list[str]]]:
     """Apply first-match semantics per policy chain and exact service label."""
     seen: set[tuple[tuple[str, ...], str]] = set()
     effective: list[tuple[Policy, Coverage, list[str]]] = []
     for policy in sorted((item for item in policies if item.enabled),
-                         key=lambda item: (item.device, _policy_chain(item), item.order if item.order is not None else item.sequence)):
+                         key=lambda item: (item.device, policy_chain_key(item), policy_order(item))):
         coverage = policy_coverage(policy, src, dst)
         if coverage == "NONE": continue
         if policy.action in {"continue", "return"} or not policy.terminal:
             continue
-        chain = _policy_chain(policy); labels: list[str] = []
-        for label in _service_labels(policy):
+        chain = policy_chain_key(policy); labels: list[str] = []
+        for label in service_labels(policy):
             key = chain, label
             if key in seen: continue
             seen.add(key); labels.append(label)
