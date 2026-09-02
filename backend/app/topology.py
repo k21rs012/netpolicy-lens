@@ -75,11 +75,39 @@ def _packet_matches(policy: Policy, protocol: str, port: int | None) -> bool:
     return protocol_ok and _port_matches(policy.dst_ports, port)
 
 
+def _bound_policy_order(config: CanonicalConfig, policy: Policy, ingress: Segment, egress: Segment) -> int:
+    """Return the ACL application order for an interface-bound policy."""
+    segment = ingress if policy.direction == "in" else egress
+    attribute = "acl_in" if policy.direction == "in" else "acl_out"
+    keys = {policy.name, str(policy.sequence), policy.name.removeprefix("filter-")}
+    for interface in config.interfaces:
+        if interface.segment_id != segment.id:
+            continue
+        for index, name in enumerate(getattr(interface, attribute)):
+            if name in keys:
+                return index
+    return len(config.policies) + policy.sequence
+
+
 def _evaluate_device(config: CanonicalConfig, ingress: Segment, egress: Segment, protocol: str, port: int | None) -> dict[str, Any]:
-    ingress_ifaces = {iface.name for iface in config.interfaces if iface.segment_id == ingress.id}
-    egress_ifaces = {iface.name for iface in config.interfaces if iface.segment_id == egress.id}
+    ingress_ifaces = {value for iface in config.interfaces if iface.segment_id == ingress.id for value in (iface.name, iface.zone) if value}
+    egress_ifaces = {value for iface in config.interfaces if iface.segment_id == egress.id for value in (iface.name, iface.zone) if value}
     candidates: list[tuple[Policy, str]] = []; scoped = False
-    for policy in sorted(config.policies, key=lambda value: value.sequence):
+    policies = sorted(config.policies, key=lambda value: (
+        0 if value.direction == "in" else 1 if value.direction == "zone" else 2,
+        _bound_policy_order(config, value, ingress, egress)
+        if value.direction in {"in", "out"} else value.sequence,
+        value.sequence,
+    ))
+    for policy in policies:
+        # ACL-style OSes store definitions separately from interface bindings.
+        # Those unbound definitions must not become global forwarding rules.
+        # RouterOS, by contrast, has global firewall chains and is evaluated.
+        if policy.direction == "unknown" and config.device.network_os in {
+            "ios", "ios-xe", "nx-os", "aoscx", "eos", "alliedware",
+            "rtx", "exos", "voss",
+        }:
+            continue
         if policy.direction == "in" and policy.interface and policy.interface not in ingress_ifaces: continue
         if policy.direction == "out" and policy.interface and policy.interface not in egress_ifaces: continue
         if policy.src_segments and ingress.id not in policy.src_segments: continue

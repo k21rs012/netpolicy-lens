@@ -36,6 +36,24 @@ ipv6 route default gateway fe80::1%lan1
     assert config.routes[0].next_hop == "fe80::1%lan1"
 
 
+def test_yamaha_short_filter_syntax_defaults_to_any_service():
+    raw = """ip lan1 address 192.168.0.1/24
+vlan lan1/2 802.1q vid=130 name=VLAN130
+ip lan1/2 address 192.168.130.1/24
+ip lan1/2 secure filter in 12013010 12013090
+ip filter 12013010 reject 192.168.130.0/24 192.168.0.0/24
+ip filter 12013090 pass * *
+"""
+    config, _ = ParserRegistry.parse(raw, "rtx-short.conf")
+
+    reject, fallback = config.policies
+    assert reject.protocol == ["*"]
+    assert reject.src_ports == ["*"] and reject.dst_ports == ["*"]
+    assert reject.interface == "lan1/2" and reject.direction == "in"
+    assert fallback.interface == "lan1/2" and fallback.direction == "in"
+    assert not config.unsupported
+
+
 def test_fortios_disabled_policy_does_not_affect_analysis():
     raw = """config system global
     set hostname fg-branch

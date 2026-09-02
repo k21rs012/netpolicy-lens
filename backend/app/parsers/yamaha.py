@@ -37,9 +37,17 @@ class YamahaRTXParser(BaseConfigParser):
             elif match := re.match(r"vlan (\S+) 802\.1q vid=(\d+)(?: name=(\S+))?", line):
                 vlan_id = int(match.group(2)); vlan_ifaces[vlan_id] = match.group(1)
                 vlans.append(VLAN(device=device_id, id=vlan_id, name=match.group(3) or f"VLAN{match.group(2)}", trace=self.trace(n, raw)))
-            elif match := re.match(r"(?:ip|ipv6) filter (\d+) (pass|reject|restrict) (\S+) (\S+) (\S+) (\S+) (\S+)", line):
+            elif match := re.match(
+                r"(?:ip|ipv6) filter (\d+) (pass|reject|restrict)"
+                r"(?: (\S+))?(?: (\S+))?(?: (\S+))?(?: (\S+))?(?: (\S+))?$",
+                line,
+            ):
                 action = {"pass": "permit", "reject": "reject", "restrict": "restrict"}[match.group(2)]
-                policies.append(Policy(id=f"{device_id}:filter:{match.group(1)}", device=device_id, name=f"filter-{match.group(1)}", sequence=int(match.group(1)), src=[match.group(3)], dst=[match.group(4)], protocol=[match.group(5)], src_ports=[match.group(6)], dst_ports=[match.group(7)], action=action, trace=self.trace(n, raw)))
+                src, dst, protocol, src_port, dst_port = (match.group(index) or "*" for index in range(3, 8))
+                policies.append(Policy(id=f"{device_id}:filter:{match.group(1)}", device=device_id,
+                    name=f"filter-{match.group(1)}", sequence=int(match.group(1)), src=[src], dst=[dst],
+                    protocol=protocol.split(","), src_ports=src_port.split(","), dst_ports=dst_port.split(","),
+                    action=action, trace=self.trace(n, raw)))
             elif match := re.match(r"(?:ip|ipv6) (\S+) secure filter (in|out) (.+)", line): bindings.append((match.group(1), match.group(2), match.group(3).split()))
             elif match := re.match(r"(ip|ipv6) route (\S+) gateway (\S+)(?: (\S+))?", line):
                 default = "::/0" if match.group(1) == "ipv6" else "0.0.0.0/0"

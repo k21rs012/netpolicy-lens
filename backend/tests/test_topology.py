@@ -47,3 +47,29 @@ def test_topology_and_reachability_api(tmp_path):
     assert topology.status_code == 200 and topology.json()["summary"]["devices"] == 2
     reachability = client.get(f"/api/reachability?src=cisco01-vlan-10&dst=rtx01-lan1&protocol=tcp&port=22&snapshot_id={snapshot_id}")
     assert reachability.status_code == 200 and reachability.json()["result"] == "DENY"
+
+
+def test_yamaha_path_uses_bound_filter_order_and_ignores_unbound_rules():
+    raw = """ip lan1 address 192.168.0.1/24
+vlan lan1/1 802.1q vid=120 name=VLAN120
+ip lan1/1 address 192.168.120.1/24
+vlan lan1/2 802.1q vid=130 name=VLAN130
+ip lan1/2 address 192.168.130.1/24
+ip lan1/2 secure filter in 900 100
+ip filter 50 pass * * * * *
+ip filter 100 pass * *
+ip filter 900 reject 192.168.130.0/24 192.168.0.0/24
+"""
+    config, _ = ParserRegistry.parse(raw, "rtx-path.conf")
+    source = next(segment for segment in config.segments if segment.vlan_id == 130)
+    lan1 = next(segment for segment in config.segments if segment.name == "LAN1")
+    vlan120 = next(segment for segment in config.segments if segment.vlan_id == 120)
+
+    denied = analyze_reachability([config], source.id, lan1.id, "icmp", None)
+    allowed = analyze_reachability([config], source.id, vlan120.id, "icmp", None)
+
+    assert denied["result"] == "DENY"
+    assert denied["steps"][0]["policy"].endswith(":900")
+    assert denied["steps"][0]["trace"]["line_start"] == 9
+    assert allowed["result"] == "ALLOW"
+    assert allowed["steps"][0]["policy"].endswith(":100")
