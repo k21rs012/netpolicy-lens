@@ -87,3 +87,12 @@ test("モバイルでサイドバーを開閉できる", async ({ page }) => {
   await page.getByRole("button", { name: "メニューを畳む" }).click();
   await expect(page.locator(".app")).toHaveClass(/sidebar-collapsed/);
 });
+
+test("stateful解析は既存セッションの仮定を明示できる", async ({ page }) => {
+  await page.getByRole("button", { name: "Topology / Path" }).click();
+  await page.getByLabel("State").selectOption("established");
+  const assumption = page.getByLabel("既存セッションを仮定");
+  await expect(assumption).toBeVisible();
+  await assumption.check();
+  await expect(assumption).toBeChecked();
+});

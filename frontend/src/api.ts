@@ -1,3 +1,17 @@
+import type {
+  Capability,
+  Device,
+  DeviceDetail,
+  DiffData,
+  MatrixData,
+  ParserWarning,
+  Policy,
+  ReachabilityData,
+  Snapshot,
+  TopologyData,
+} from "./types";
+
+
 const json = async <T>(url: string, init?: RequestInit): Promise<T> => {
   const r = await fetch(url, init);
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
@@ -5,26 +19,33 @@ const json = async <T>(url: string, init?: RequestInit): Promise<T> => {
 };
 export const api = {
   matrix: (protocol = "", port = "") =>
-    json<any>(
+    json<MatrixData>(
       `/api/matrix?protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}`,
     ),
-  devices: () => json<any>("/api/devices"),
-  device: (id: string) => json<any>(`/api/devices/${encodeURIComponent(id)}`),
-  policies: () => json<any>("/api/policies"),
-  capabilities: () => json<any>("/api/parser/capabilities"),
+  devices: () => json<{ items: Device[] }>("/api/devices"),
+  device: (id: string) => json<DeviceDetail>(`/api/devices/${encodeURIComponent(id)}`),
+  policies: () => json<{ items: Policy[] }>("/api/policies"),
+  capabilities: () => json<Capability[]>("/api/parser/capabilities"),
   warnings: (device = "") =>
-    json<any>(`/api/parser/warnings?device=${encodeURIComponent(device)}`),
-  snapshots: () => json<any>("/api/snapshots"),
+    json<{ items: ParserWarning[] }>(`/api/parser/warnings?device=${encodeURIComponent(device)}`),
+  snapshots: () => json<Snapshot[]>("/api/snapshots"),
   debug: () => json<any>("/api/parser/debug"),
   sample: () => json<any>("/api/sample/load", { method: "POST" }),
   diff: (before: string, after: string) =>
-    json<any>(
+    json<DiffData>(
       `/api/diff?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}`,
     ),
-  topology: () => json<any>("/api/topology"),
-  reachability: (src: string, dst: string, protocol: string, port: string, state = "new") =>
-    json<any>(
-      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}&state=${encodeURIComponent(state)}`,
+  topology: () => json<TopologyData>("/api/topology"),
+  reachability: (
+    src: string,
+    dst: string,
+    protocol: string,
+    port: string,
+    state = "new",
+    assumeSession = false,
+  ) =>
+    json<ReachabilityData>(
+      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`,
     ),
   previewConfigs: (files: File[]) => {
     const form = new FormData();

@@ -192,8 +192,10 @@ export interface ReachabilityData {
   protocol: string;
   port: number | null;
   state: string;
+  assume_session: boolean;
   result: Result;
   path: string[];
   steps: ReachabilityStep[];
   topology: TopologyData;
+  route_reason?: string | null;
 }

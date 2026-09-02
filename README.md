@@ -79,13 +79,14 @@ CanonicalConfig
    └── Trace / Warning / Unsupported
    ↓
 Static Policy Analyzer
-   ├── Segment Matrix / Snapshot Diff
-   └── Topology Graph / Multi-hop Path Trace
+   ├── Policy utilities ── Segment Matrix / Snapshot Diff
+   └── Topology Graph
+       └── Routing → Policy Engine → NAT → typed ReachabilityResult
    ↓
 FastAPI ── SQLite snapshots ── React UI
 ```
 
-AnalyzerとUIはベンダー固有構文を参照しません。ZoneがないOSもSegmentへ正規化されます。
+AnalyzerとUIはベンダー固有構文を参照しません。ZoneがないOSもSegmentへ正規化されます。Path Traceは`routing.py`、`policy_engine.py`、`nat.py`、`reachability.py`へ責務を分離し、API結果はPydantic modelで検証します。React UIもMatrix、Topology、Diff、Device、Policy、Importを独立componentとして構成します。
 
 ## ローカル開発
 
@@ -146,7 +147,7 @@ Canonical Model、Analyzer、UIの変更は原則不要です。
 
 ```bash
 cd backend
-PYTHONPATH=. pytest -q
+python -m pytest -q
 
 cd ../frontend
 npm run build
@@ -159,7 +160,7 @@ npm run test:e2e
 - configは外部サービスへ送信しません。
 - Topologyの機器間リンクは設定内サブネットの重複から推定し、物理配線を保証しません。
 - Path Traceはconnected/static routeの最長一致、VRF、ACL/zone/global chain、指定したconnection stateを評価します。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
-- 一致したNAT ruleと変換値はPath Traceに表示しますが、実セッションテーブルや時刻・ユーザー・URL categoryなどconfig外のランタイム条件は再現しません。
+- 一致したNAT ruleと変換値はPath Traceに表示しますが、実セッションテーブルや時刻・ユーザー・URL categoryなどconfig外のランタイム条件は再現しません。`established` / `related` は実セッションの存在を確認できないため通常は `UNKNOWN` とし、画面で「既存セッションを仮定」を明示した場合だけstateful sessionとして評価します。
 - 未解決オブジェクトや適用関係が曖昧な場合は `UNKNOWN` を優先します。
 - Password / Secret / SNMP CommunityはSnapshot保存前とJSON Export時にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
 - 認証・RBACは未実装です。Composeは`127.0.0.1:8080`だけにbindします。リモート公開時は認証付きReverse Proxyを必須としてください。詳細は[SECURITY.md](SECURITY.md)を参照してください。
