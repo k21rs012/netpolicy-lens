@@ -79,6 +79,97 @@ def test_vyos_golden_zone_firewall_and_nat():
     assert cell.result == "ALLOW" and cell.allowed == ["TCP/443"]
 
 
+def test_vyos_14_hierarchical_configuration():
+    raw = '''firewall {
+    ipv4 {
+        input {
+            filter {
+                default-action accept
+                rule 5 {
+                    action jump
+                    inbound-interface {
+                        name eth0
+                    }
+                    jump-target WAN-IN
+                }
+            }
+        }
+        name WAN-IN {
+            default-action drop
+            rule 10 {
+                action accept
+                description "Allow SSH"
+                destination {
+                    port 22
+                }
+                protocol tcp
+            }
+            rule 20 {
+                action accept
+                source {
+                    port 53
+                }
+                protocol udp
+            }
+        }
+    }
+}
+interfaces {
+    ethernet eth0 {
+        address 114.129.1.183/28
+    }
+    ethernet eth1 {
+        address 192.168.0.1/24
+    }
+}
+nat {
+    source {
+        rule 10 {
+            source {
+                address 192.168.0.0/24
+            }
+            translation {
+                address masquerade
+            }
+        }
+    }
+}
+protocols {
+    static {
+        route 0.0.0.0/0 {
+            next-hop 114.129.1.177 {
+            }
+        }
+    }
+}
+system {
+    host-name vyos
+}
+'''
+    cfg, ranked = ParserRegistry.parse(raw, "config.boot")
+
+    assert ranked[0].parser_id == "vyos"
+    assert cfg.device.hostname == "vyos"
+    assert {interface.name for interface in cfg.interfaces} == {"eth0", "eth1"}
+    assert len(cfg.policies) == 3
+    entry = next(policy for policy in cfg.policies if policy.name == "base-input")
+    assert entry.action == "jump"
+    assert entry.jump_target == "WAN-IN"
+    assert entry.in_interfaces == ["eth0"]
+    assert entry.direction == "in"
+    ssh = next(policy for policy in cfg.policies if policy.name == "WAN-IN" and policy.sequence == 10)
+    assert ssh.action == "permit"
+    assert ssh.protocol == ["tcp"]
+    assert ssh.dst_ports == ["22"]
+    assert ssh.default_action == "deny"
+    dns = next(policy for policy in cfg.policies if policy.name == "WAN-IN" and policy.sequence == 20)
+    assert dns.src_ports == ["53"]
+    assert cfg.nat[0].original_src == "192.168.0.0/24"
+    assert cfg.nat[0].translated_src == "masquerade"
+    assert cfg.routes[0].destination == "0.0.0.0/0"
+    assert cfg.routes[0].next_hop == "114.129.1.177"
+
+
 def test_phase3_detection_is_distinct():
     cases = {"aoscx01.conf": "aruba_aoscx", "eos01.conf": "arista_eos", "allied01.conf": "alliedware_plus", "vyos01.set": "vyos"}
     for filename, expected in cases.items():

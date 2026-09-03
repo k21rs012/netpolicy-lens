@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from collections import defaultdict
 
 from ..models import AddressObject, CanonicalConfig, Device, Interface, NATRule, ParserCapabilities, ParserWarning, Policy, Route, Segment, ServiceObject, VLAN, Zone
@@ -13,6 +14,47 @@ def _unquote(value: str) -> str:
     return value.strip().strip("'").strip('"')
 
 
+def _tokens(value: str) -> list[str]:
+    try:
+        return shlex.split(value, posix=True)
+    except ValueError:
+        return value.split()
+
+
+def _configuration_commands(config: str) -> list[tuple[int, str, str, bool]]:
+    """Return VyOS configuration as set-style commands with source line metadata.
+
+    VyOS exports both ``show configuration commands`` output and its native
+    brace-delimited configuration.  Parsers operate on one command shape while
+    traces continue to point at the original input.
+    """
+    commands: list[tuple[int, str, str, bool]] = []
+    stack: list[list[str]] = []
+    for number, raw in enumerate(config.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith(("#", "//")):
+            continue
+        if line.startswith("set "):
+            commands.append((number, line, raw, False))
+            continue
+        while line.startswith("}"):
+            if stack:
+                stack.pop()
+            line = line[1:].strip()
+        if not line:
+            continue
+        if line.endswith("{"):
+            segment = _tokens(line[:-1].strip())
+            if segment:
+                stack.append(segment)
+                path = [token for part in stack for token in part]
+                commands.append((number, "set " + " ".join(path), raw, True))
+            continue
+        path = [token for part in stack for token in part]
+        commands.append((number, "set " + " ".join(path + _tokens(line)), raw, False))
+    return commands
+
+
 @ParserRegistry.register
 class VyOSParser(BaseConfigParser):
     parser_id = "vyos"
@@ -22,19 +64,22 @@ class VyOSParser(BaseConfigParser):
 
     @classmethod
     def detect(cls, config: str) -> float:
+        normalized = "\n".join(command for _, command, _, _ in _configuration_commands(config))
         score = 0.0
-        score += .3 if re.search(r"(?m)^set interfaces ethernet \S+ address ", config) else 0
-        score += .28 if re.search(r"(?m)^set firewall (?:ipv4 |ipv6 )?(?:name|zone) ", config) else 0
-        score += .18 if re.search(r"(?m)^set protocols static route", config) else 0
-        score += .14 if re.search(r"(?m)^set nat (?:source|destination) rule", config) else 0
-        score += .1 if re.search(r"(?m)^set system host-name", config) else 0
+        score += .3 if re.search(r"(?m)^set interfaces ethernet \S+ address ", normalized) else 0
+        score += .28 if re.search(r"(?m)^set firewall (?:ipv4 |ipv6 )?(?:name|zone|forward|input|output) ", normalized) else 0
+        score += .18 if re.search(r"(?m)^set protocols static route", normalized) else 0
+        score += .14 if re.search(r"(?m)^set nat (?:source|destination) rule", normalized) else 0
+        score += .1 if re.search(r"(?m)^set system host-name", normalized) else 0
         return min(score, 1.0)
 
     def parse(self) -> CanonicalConfig:
-        host_match = re.search(r"(?m)^set system host-name\s+(.+)$", self.config)
+        commands = _configuration_commands(self.config)
+        normalized = "\n".join(command for _, command, _, _ in commands)
+        host_match = re.search(r"(?m)^set system host-name\s+(.+)$", normalized)
         hostname = _unquote(host_match.group(1)) if host_match else slug(self.source_file.rsplit(".", 1)[0])
         device_id = slug(hostname); device = Device(id=device_id, hostname=hostname, vendor="vyos", network_os="vyos", platform="VyOS Router", source_file=self.source_file)
-        device.features["dynamic_routing"] = bool(re.search(r"(?m)^set protocols (?:bgp|ospf|ospfv3|isis|rip)\b", self.config))
+        device.features["dynamic_routing"] = bool(re.search(r"(?m)^set protocols (?:bgp|ospf|ospfv3|isis|rip)\b", normalized))
         interfaces: dict[str, Interface] = {}; vlan_ids: dict[str, int] = {}; zone_members: dict[str, list[str]] = defaultdict(list)
         zone_policies: dict[str, tuple[str, str]] = {}; firewall_rules: dict[tuple[str, int], dict[str, str]] = defaultdict(dict)
         firewall_lines: dict[tuple[str, int], list[tuple[int, str]]] = defaultdict(list)
@@ -43,9 +88,7 @@ class VyOSParser(BaseConfigParser):
         nat_lines: dict[tuple[str, int], list[tuple[int, str]]] = defaultdict(list); routes: dict[str, Route] = {}
         warnings: list[ParserWarning] = []
         recognized: set[int] = set()
-        for number, raw in enumerate(self.lines, 1):
-            line = raw.strip()
-            if not line or line.startswith("#"): continue
+        for number, line, raw, structural in commands:
             if line.startswith("set system host-name "): recognized.add(number); continue
             if match := re.match(r"set interfaces ethernet (\S+)(?: vif (\d+))? (address|description|vrf) (.+)", line):
                 base, vlan, key, value = match.groups(); name = f"{base}.{vlan}" if vlan else base
@@ -59,9 +102,9 @@ class VyOSParser(BaseConfigParser):
                 zone_members[_unquote(match.group(1))].append(_unquote(match.group(2))); recognized.add(number); continue
             if match := re.match(r"set (?:firewall zone|zone-policy zone) (\S+) from (\S+) firewall (?:name|ipv6-name) (\S+)", line):
                 zone_policies[_unquote(match.group(3))] = (_unquote(match.group(2)), _unquote(match.group(1))); recognized.add(number); continue
-            if match := re.match(r"set firewall (?:ipv4 |ipv6 )?name (\S+) rule (\d+) (action|protocol|source address|destination address|source port|destination port|description|jump-target) (.+)", line):
+            if match := re.match(r"set firewall (?:ipv4 |ipv6 )?name (\S+) rule (\d+) (action|protocol|source address|destination address|source port|destination port|description|jump-target|inbound-interface name|outbound-interface name) (.+)", line):
                 key = (_unquote(match.group(1)), int(match.group(2))); firewall_rules[key][match.group(3)] = _unquote(match.group(4)); firewall_lines[key].append((number, raw)); recognized.add(number); continue
-            if match := re.match(r"set firewall (?:ipv4 |ipv6 )?(forward|input|output) filter rule (\d+) (action|protocol|source address|destination address|source port|destination port|description|jump-target) (.+)", line):
+            if match := re.match(r"set firewall (?:ipv4 |ipv6 )?(forward|input|output) filter rule (\d+) (action|protocol|source address|destination address|source port|destination port|description|jump-target|inbound-interface name|outbound-interface name) (.+)", line):
                 name = f"base-{match.group(1)}"; key = (name, int(match.group(2))); base_chains.add(name)
                 firewall_rules[key][match.group(3)] = _unquote(match.group(4)); firewall_lines[key].append((number, raw)); recognized.add(number); continue
             if match := re.match(r"set firewall (?:ipv4 |ipv6 )?(?:(forward|input|output) filter|name (\S+)) default-action (accept|drop|reject)", line):
@@ -88,7 +131,8 @@ class VyOSParser(BaseConfigParser):
                 recognized.add(number); continue
             if match := re.match(r"set nat (source|destination) rule (\d+) (source address|destination address|outbound-interface name|inbound-interface name|translation address|translation port|protocol|destination port) (.+)", line):
                 key = (match.group(1), int(match.group(2))); nat_data[key][match.group(3)] = _unquote(match.group(4)); nat_lines[key].append((number, raw)); recognized.add(number); continue
-            warnings.append(ParserWarning(device=device_id, line=number, config=line, reason="unsupported statement", parser=self.parser_id))
+            if not structural:
+                warnings.append(ParserWarning(device=device_id, line=number, config=line, reason="unsupported statement", parser=self.parser_id))
 
         vlans = [VLAN(device=device_id, id=vlan, name=name.upper(), subnets=interface_networks(interfaces[name].addresses), gateway=interfaces[name].addresses[0].split("/")[0] if interfaces[name].addresses else None, trace=interfaces[name].trace) for name, vlan in vlan_ids.items()]
         zones: list[Zone] = []; segments: list[Segment] = []
@@ -115,12 +159,16 @@ class VyOSParser(BaseConfigParser):
             source_zone, destination_zone = zone_policies.get(name, (None, None)); lines = firewall_lines[(name, sequence)]
             base_chain = name.removeprefix("base-") if name in base_chains else None
             default = {"accept": "permit", "drop": "deny", "reject": "reject"}.get(chain_defaults.get(name, ""))
+            direction = ({"input": "in", "output": "out"}.get(base_chain, base_chain)
+                         if base_chain else "unknown")
             policies.append(Policy(id=f"{device_id}:{name}:{sequence}", device=device_id, name=name, sequence=sequence,
                 src=source, dst=destination, src_segments=[segment_by_zone[source_zone]] if source_zone in segment_by_zone else [],
                 dst_segments=[segment_by_zone[destination_zone]] if destination_zone in segment_by_zone else [],
                 protocol=[data.get("protocol", "ip")], src_ports=[data.get("source port", "any")], dst_ports=[data.get("destination port", "any")],
+                in_interfaces=[data["inbound-interface name"]] if data.get("inbound-interface name") else [],
+                out_interfaces=[data["outbound-interface name"]] if data.get("outbound-interface name") else [],
                 src_negate=src_negate, dst_negate=dst_negate,
-                action=action, direction="zone" if source_zone else "forward" if base_chain == "forward" else "unknown",
+                action=action, direction="zone" if source_zone else direction,
                 from_zone=source_zone, to_zone=destination_zone,
                 chain_id=f"zone:{source_zone}:{destination_zone}" if source_zone else f"vyos:{name}",
                 default_action=default or ("permit" if name in base_chains else "deny"),
