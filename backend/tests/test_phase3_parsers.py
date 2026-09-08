@@ -170,6 +170,80 @@ system {
     assert cfg.routes[0].next_hop == "114.129.1.177"
 
 
+def test_vyos_14_groups_families_state_routes_and_nat_conditions():
+    raw = """set system host-name edge-vyos
+set interfaces ethernet eth0 address 10.0.1.1/24
+set interfaces ethernet eth1 address 10.0.2.1/24
+set interfaces ethernet eth1 address 2001:db8:2::1/64
+set firewall group network-group CLIENTS network 10.0.1.0/24
+set firewall group port-group WEB port 80
+set firewall group port-group WEB port 443
+set firewall group interface-group LAN interface eth0
+set firewall ipv4 forward filter default-action drop
+set firewall ipv4 forward filter rule 10 action accept
+set firewall ipv4 forward filter rule 10 source group network-group CLIENTS
+set firewall ipv4 forward filter rule 10 destination group port-group WEB
+set firewall ipv4 forward filter rule 10 inbound-interface group LAN
+set firewall ipv4 forward filter rule 10 state new
+set firewall ipv4 forward filter rule 20 action accept
+set firewall ipv4 forward filter rule 20 time weekdays Mon,Tue
+set firewall ipv6 forward filter default-action drop
+set firewall ipv6 forward filter rule 10 action drop
+set firewall ipv6 forward filter rule 10 destination address 2001:db8:2::/64
+set protocols static route 203.0.113.0/24 next-hop 10.0.2.2
+set protocols static route 203.0.113.0/24 next-hop 10.0.2.3
+set protocols static route 198.51.100.0/24 blackhole
+set nat source rule 10 source address 10.0.1.0/24
+set nat source rule 10 source port 1024-65535
+set nat source rule 10 destination port 443
+set nat source rule 10 outbound-interface name eth1
+set nat source rule 10 translation address masquerade
+"""
+    cfg, _ = ParserRegistry.parse(raw, "vyos.conf", parser_id="vyos")
+
+    assert len(cfg.policies) == 3
+    ipv4 = next(policy for policy in cfg.policies if policy.sequence == 10 and policy.ip_version == 4)
+    ipv6 = next(policy for policy in cfg.policies if policy.sequence == 10 and policy.ip_version == 6)
+    assert ipv4.src == ["10.0.1.0/24"]
+    assert ipv4.dst_ports == ["80", "443"]
+    assert ipv4.in_interfaces == ["eth0"]
+    assert ipv4.states == ["new"]
+    assert ipv6.action == "deny"
+    partial = next(policy for policy in cfg.policies if policy.sequence == 20)
+    assert partial.confidence.value == "PARTIAL"
+    assert partial.unsupported_matches == ["time weekdays Mon,Tue"]
+    route = next(route for route in cfg.routes if route.destination == "203.0.113.0/24")
+    assert route.next_hops == ["10.0.2.2", "10.0.2.3"]
+    assert next(route for route in cfg.routes if route.destination == "198.51.100.0/24").route_type == "blackhole"
+    nat = cfg.nat[0]
+    assert nat.sequence == 10
+    assert nat.source_ports == ["1024-65535"]
+    assert nat.destination_ports == ["443"]
+    assert nat.out_interfaces == ["eth1"]
+
+
+def test_vyos_zone_local_default_and_default_only_ruleset():
+    raw = """set system host-name zones
+set interfaces ethernet eth0 address 192.0.2.1/24
+set interfaces ethernet eth1 address 10.0.0.1/24
+set firewall zone WAN interface eth0
+set firewall zone LAN interface eth1
+set firewall zone LOCAL local-zone
+set firewall zone WAN default-action drop
+set firewall zone WAN from LAN firewall name LAN-WAN
+set firewall ipv4 name LAN-WAN default-action accept
+"""
+    cfg, _ = ParserRegistry.parse(raw, "zones.conf", parser_id="vyos")
+
+    assert {zone.name for zone in cfg.zones} == {"WAN", "LAN", "LOCAL"}
+    attached = next(policy for policy in cfg.policies if policy.name == "LAN-WAN")
+    assert attached.action == "continue"
+    assert attached.default_action == "permit"
+    assert attached.from_zone == "LAN" and attached.to_zone == "WAN"
+    assert any(policy.name == "zone-default-WAN" and policy.from_zone == "LOCAL"
+               and policy.action == "deny" for policy in cfg.policies)
+
+
 def test_phase3_detection_is_distinct():
     cases = {"aoscx01.conf": "aruba_aoscx", "eos01.conf": "arista_eos", "allied01.conf": "alliedware_plus", "vyos01.set": "vyos"}
     for filename, expected in cases.items():

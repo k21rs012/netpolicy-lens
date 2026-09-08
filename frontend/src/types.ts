@@ -176,7 +176,16 @@ export interface ReachabilityStep {
   reason: string;
   policy: string | null;
   route?: string;
-  nat?: { name: string; type: string; translated_src?: string; translated_dst?: string; translated_port?: number }[];
+  nat?: {
+    name: string;
+    type: string;
+    translated_src?: string;
+    translated_dst?: string;
+    translated_port?: number;
+    evaluation_order?: string;
+    confidence: "EXACT" | "PARTIAL";
+    note?: string;
+  }[];
   chains?: { result: Result; reason: string; policy: string | null; chain?: string }[];
   trace?: {
     source_file: string;
@@ -191,6 +200,8 @@ export interface ReachabilityData {
   destination: string;
   protocol: string;
   port: number | null;
+  source_port: number | null;
+  ip_version: 4 | 6 | null;
   state: string;
   assume_session: boolean;
   result: Result;

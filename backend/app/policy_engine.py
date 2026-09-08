@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ipaddress
+
 from .analyzer import policy_coverage
 from .models import CanonicalConfig, Confidence, Policy, Segment
 from .policy_utils import packet_matches, policy_chain_key, policy_order
@@ -39,6 +41,19 @@ def policy_applies(
 ) -> bool:
     if not policy.enabled:
         return False
+    if policy.ip_version:
+        def versions(segment: Segment) -> set[int]:
+            result: set[int] = set()
+            for raw in segment.networks:
+                try:
+                    result.add(ipaddress.ip_network(raw, strict=False).version)
+                except ValueError:
+                    continue
+            return result
+        ingress_versions, egress_versions = versions(ingress), versions(egress)
+        if ((ingress_versions and policy.ip_version not in ingress_versions)
+                or (egress_versions and policy.ip_version not in egress_versions)):
+            return False
     if policy.direction == "unknown" and config.device.network_os in DEFINITION_ONLY_NETWORK_OSES:
         return False
     if (
@@ -95,6 +110,7 @@ def evaluate_chain(
     state: str,
     all_chains: dict[tuple[str, ...], list[Policy]],
     visited: set[tuple[str, ...]] | None = None,
+    source_port: int | None = None,
 ) -> ChainVerdict:
     rules = sorted(rules, key=policy_order)
     key = policy_chain_key(rules[0])
@@ -107,10 +123,18 @@ def evaluate_chain(
             continue
         resolved = resolve_policy(config, policy)
         coverage = policy_coverage(resolved, ingress, egress)
-        if coverage == "NONE" or not packet_matches(resolved, protocol, port):
+        if coverage == "NONE" or not packet_matches(resolved, protocol, port, source_port):
             continue
         suffix = "（Segmentの一部に一致）" if coverage == "PARTIAL" else ""
-        if coverage == "PARTIAL" or policy.confidence != Confidence.EXACT:
+        source_port_unknown = source_port is None and not any(
+            value.lower() in {"any", "*"} for value in policy.src_ports
+        )
+        destination_port_unknown = port is None and not any(
+            value.lower() in {"any", "*"} for value in policy.dst_ports
+        )
+        if (coverage == "PARTIAL" or policy.confidence != Confidence.EXACT
+                or policy.unsupported_matches or source_port_unknown
+                or destination_port_unknown):
             result = "PARTIAL"
         elif policy.action == "permit":
             result = "ALLOW"
@@ -130,7 +154,7 @@ def evaluate_chain(
             if target:
                 jumped = evaluate_chain(
                     config, all_chains[target], ingress, egress, protocol, port,
-                    state, all_chains, visited.copy(),
+                    state, all_chains, visited.copy(), source_port,
                 )
                 if jumped.result == "RETURN":
                     continue
@@ -142,6 +166,20 @@ def evaluate_chain(
             result=result, reason=f"{policy.name} / Rule {policy.sequence}{suffix}",
             policy=policy.id, trace=policy.trace, chain=key[-1],
         )
+    default_action = next((rule.default_action for rule in rules if rule.default_action), None)
+    if default_action == "return":
+        return ChainVerdict(result="RETURN", reason="custom chain default return", chain=key[-1])
+    if default_action == "jump":
+        target_name = next((rule.default_jump_target for rule in rules if rule.default_jump_target), None)
+        target = next((candidate for candidate in all_chains
+                       if target_name and (candidate[-1] == target_name
+                                           or candidate[-1].endswith(f":{target_name}"))), None)
+        if target:
+            return evaluate_chain(
+                config, all_chains[target], ingress, egress, protocol, port,
+                state, all_chains, visited.copy(), source_port,
+            )
+        return ChainVerdict(result="UNKNOWN", reason="default jump targetを解決できません", chain=key[-1])
     if config.device.network_os == "routeros" and not any(rule.entrypoint for rule in rules):
         return ChainVerdict(result="RETURN", reason="custom chain end", chain=key[-1])
     default = chain_default(config, rules)
@@ -176,6 +214,8 @@ def evaluate_device(
     port: int | None,
     state: str = "new",
     assume_session: bool = False,
+    source_port: int | None = None,
+    ip_version: int | None = None,
 ) -> HopResult:
     if state in {"established", "related"} and config.device.network_os in STATEFUL_NETWORK_OSES:
         if assume_session:
@@ -197,6 +237,8 @@ def evaluate_device(
     }
     chains: dict[tuple[str, ...], list[Policy]] = {}
     for policy in config.policies:
+        if ip_version and policy.ip_version and policy.ip_version != ip_version:
+            continue
         if policy_applies(policy, config, ingress, egress, ingress_interfaces, egress_interfaces):
             chains.setdefault(policy_chain_key(policy), []).append(policy)
     entry_chains = {key: rules for key, rules in chains.items() if any(rule.entrypoint for rule in rules)}
@@ -211,7 +253,8 @@ def evaluate_device(
             result="DENY" if firewall_default_deny else "UNKNOWN",
             reason="適用Policyの暗黙deny" if firewall_default_deny else "一致する適用Policyを確認できません",
         )
-    verdicts = [evaluate_chain(config, rules, ingress, egress, protocol, port, state, chains)
+    verdicts = [evaluate_chain(config, rules, ingress, egress, protocol, port, state, chains,
+                               source_port=source_port)
                 for rules in entry_chains.values()]
     values = {item.result for item in verdicts}
     result = (

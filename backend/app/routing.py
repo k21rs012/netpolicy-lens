@@ -20,6 +20,7 @@ def routed_egress(
     config: CanonicalConfig,
     destination: Segment,
     ingress: Segment | None = None,
+    ip_version: int | None = None,
 ) -> tuple[set[str] | None, str | None]:
     """Resolve egress segments using connected and longest-prefix routes.
 
@@ -32,20 +33,33 @@ def routed_egress(
     ingress_interfaces = [item for item in config.interfaces if ingress and item.segment_id == ingress.id]
     if any(item.policy_route_map for item in ingress_interfaces):
         return set(), "PBR configured (unsupported match)"
+    addresses = _destination_addresses(destination)
+    if ip_version:
+        addresses = [address for address in addresses if address.version == ip_version]
+        if not addresses:
+            return set(), f"destinationにIPv{ip_version} networkがありません"
     if destination.device == config.device.id and destination.vrf == source_vrf:
         return {destination.id}, "connected"
 
-    addresses = _destination_addresses(destination)
-    parsed_routes: list[tuple[int, Route]] = []
-    for route in config.routes:
-        if route.vrf != source_vrf:
-            continue
-        try:
-            network = ipaddress.ip_network(route.destination, strict=False)
-        except ValueError:
-            continue
-        if any(address.version == network.version and address in network for address in addresses):
-            parsed_routes.append((network.prefixlen, route))
+    def best_routes(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> list[Route]:
+        candidates: list[tuple[int, Route]] = []
+        for route in config.routes:
+            if route.vrf != source_vrf:
+                continue
+            try:
+                network = ipaddress.ip_network(route.destination, strict=False)
+            except ValueError:
+                continue
+            if address.version == network.version and address in network:
+                candidates.append((network.prefixlen, route))
+        if not candidates:
+            return []
+        prefix = max(item[0] for item in candidates)
+        routes = [route for length, route in candidates if length == prefix]
+        metric = min(route.metric if route.metric is not None else 0 for route in routes)
+        return [route for route in routes if (route.metric if route.metric is not None else 0) == metric]
+
+    parsed_routes = [route for address in addresses for route in best_routes(address)]
     if not config.routes or not addresses:
         return None, None
     if not parsed_routes:
@@ -53,30 +67,51 @@ def routed_egress(
             return None, "dynamic routing configured (RIB unavailable)"
         return set(), None
 
-    best_prefix = max(prefix for prefix, _ in parsed_routes)
-    best = [route for prefix, route in parsed_routes if prefix == best_prefix]
-    best_metric = min(route.metric if route.metric is not None else 0 for route in best)
-    best = [route for route in best if (route.metric if route.metric is not None else 0) == best_metric]
     selected: set[str] = set()
-    for route in best:
+    terminal_routes: list[str] = []
+
+    def resolve(route: Route, visited: set[tuple[str, str | None]]) -> None:
+        identity = route.destination, route.vrf
+        if identity in visited:
+            return
+        visited.add(identity)
+        if route.route_type != "unicast":
+            terminal_routes.append(f"{route.destination} ({route.route_type})")
+            return
         if route.interface:
             for interface in config.interfaces:
                 if route.interface in {interface.name, interface.zone} and interface.segment_id:
                     selected.add(interface.segment_id)
-        if not route.next_hop:
-            continue
-        try:
-            next_hop = ipaddress.ip_address(route.next_hop.split("%", 1)[0])
-        except ValueError:
-            continue
-        for segment in attached.values():
-            if segment.vrf != source_vrf:
+        hops = list(dict.fromkeys([*route.next_hops, *([route.next_hop] if route.next_hop else [])]))
+        for raw_hop in hops:
+            address_text, _, scope = raw_hop.partition("%")
+            if scope:
+                for interface in config.interfaces:
+                    if interface.name == scope and interface.segment_id:
+                        selected.add(interface.segment_id)
+            try:
+                next_hop = ipaddress.ip_address(address_text)
+            except ValueError:
                 continue
-            for raw in segment.networks:
-                try:
-                    network = ipaddress.ip_network(raw, strict=False)
-                except ValueError:
+            directly_attached = False
+            for segment in attached.values():
+                if segment.vrf != source_vrf:
                     continue
-                if next_hop.version == network.version and next_hop in network:
-                    selected.add(segment.id)
-    return selected, ", ".join(route.destination for route in best)
+                for raw in segment.networks:
+                    try:
+                        network = ipaddress.ip_network(raw, strict=False)
+                    except ValueError:
+                        continue
+                    if next_hop.version == network.version and next_hop in network:
+                        selected.add(segment.id)
+                        directly_attached = True
+            if not directly_attached:
+                for recursive in best_routes(next_hop):
+                    resolve(recursive, visited.copy())
+
+    for route in parsed_routes:
+        resolve(route, set())
+    evidence = ", ".join(dict.fromkeys(
+        [route.destination for route in parsed_routes] + terminal_routes
+    ))
+    return selected, evidence

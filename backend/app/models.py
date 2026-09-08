@@ -80,10 +80,12 @@ class Route(BaseModel):
     device: str
     destination: str
     next_hop: str | None = None
+    next_hops: list[str] = Field(default_factory=list)
     interface: str | None = None
     metric: int | None = None
     vrf: str | None = None
     policy: str | None = None
+    route_type: Literal["unicast", "blackhole", "reject", "unreachable"] = "unicast"
     trace: Trace | None = None
 
 
@@ -111,11 +113,14 @@ class Policy(BaseModel):
     confidence: Confidence = Confidence.EXACT
     chain_id: str | None = None
     order: int | None = None
-    default_action: Literal["permit", "deny", "reject", "unknown"] | None = None
+    default_action: Literal["permit", "deny", "reject", "jump", "return", "unknown"] | None = None
     enabled: bool = True
     terminal: bool = True
     jump_target: str | None = None
+    default_jump_target: str | None = None
     states: list[str] = Field(default_factory=list)
+    ip_version: Literal[4, 6] | None = None
+    unsupported_matches: list[str] = Field(default_factory=list)
     entrypoint: bool = True
     trace: Trace | None = None
 
@@ -131,6 +136,13 @@ class NATRule(BaseModel):
     protocol: str = "any"
     original_port: int | None = None
     translated_port: int | None = None
+    sequence: int | None = None
+    source_ports: list[str] = Field(default_factory=list)
+    destination_ports: list[str] = Field(default_factory=list)
+    in_interfaces: list[str] = Field(default_factory=list)
+    out_interfaces: list[str] = Field(default_factory=list)
+    disabled: bool = False
+    ip_version: Literal[4, 6] | None = None
     trace: Trace | None = None
 
 

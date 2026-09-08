@@ -41,11 +41,13 @@ export const api = {
     dst: string,
     protocol: string,
     port: string,
+    sourcePort: string,
+    ipVersion: string,
     state = "new",
     assumeSession = false,
   ) =>
     json<ReachabilityData>(
-      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`,
+      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}${sourcePort ? `&source_port=${encodeURIComponent(sourcePort)}` : ""}${ipVersion ? `&ip_version=${encodeURIComponent(ipVersion)}` : ""}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`,
     ),
   previewConfigs: (files: File[]) => {
     const form = new FormData();

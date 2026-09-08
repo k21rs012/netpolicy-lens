@@ -102,3 +102,12 @@ def test_import_rejects_invalid_zip_and_oversized_upload(monkeypatch):
     monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 4)
     oversized = client.post("/api/configs/preview", files=[("files", ("large.conf", b"12345", "text/plain"))])
     assert oversized.status_code == 413
+
+
+def test_reachability_rejects_invalid_family_and_ports(tmp_path: Path):
+    main.store = SnapshotStore(str(tmp_path / "validation.db"))
+    client = TestClient(main.app)
+
+    assert client.get("/api/reachability?src=a&dst=b&ip_version=5").status_code == 422
+    assert client.get("/api/reachability?src=a&dst=b&port=70000").status_code == 422
+    assert client.get("/api/reachability?src=a&dst=b&source_port=-1").status_code == 422

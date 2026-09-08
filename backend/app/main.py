@@ -209,10 +209,21 @@ def topology(snapshot_id: str | None = None):
 @app.get("/api/reachability")
 def reachability(src: str, dst: str, protocol: str = "tcp", port: int | None = None,
                  state: str = "new", assume_session: bool = False,
+                 source_port: int | None = None,
+                 ip_version: int | None = None,
                  snapshot_id: str | None = None):
     cfgs, resolved = configs(snapshot_id)
     if state not in {"new", "established", "related", "invalid", "untracked"}:
         raise HTTPException(422, "Unsupported connection state")
-    try: result = analyze_reachability(cfgs, src, dst, protocol, port, state, assume_session)
+    if port is not None and not 0 <= port <= 65535:
+        raise HTTPException(422, "port must be between 0 and 65535")
+    if source_port is not None and not 0 <= source_port <= 65535:
+        raise HTTPException(422, "source_port must be between 0 and 65535")
+    if ip_version not in {None, 4, 6}:
+        raise HTTPException(422, "ip_version must be 4 or 6")
+    try: result = analyze_reachability(
+        cfgs, src, dst, protocol, port, state, assume_session, source_port,
+        ip_version,
+    )
     except ValueError as exc: raise HTTPException(404, str(exc)) from exc
     return {"snapshot_id": resolved, **result}

@@ -50,6 +50,9 @@ class NatEffect(BaseModel):
     translated_src: str | None = None
     translated_dst: str | None = None
     translated_port: int | None = None
+    evaluation_order: str | None = None
+    confidence: Literal["EXACT", "PARTIAL"] = "EXACT"
+    note: str | None = None
     trace: Trace | None = None
 
 
@@ -79,6 +82,8 @@ class ReachabilityResult(BaseModel):
     destination: str
     protocol: str
     port: int | None = None
+    source_port: int | None = None
+    ip_version: Literal[4, 6] | None = None
     state: str = "new"
     assume_session: bool = False
     result: PublicVerdict

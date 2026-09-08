@@ -16,6 +16,8 @@ export function TopologyView() {
   const [dst, setDst] = useState("");
   const [protocol, setProtocol] = useState("tcp");
   const [port, setPort] = useState("443");
+  const [sourcePort, setSourcePort] = useState("");
+  const [ipVersion, setIpVersion] = useState("4");
   const [state, setState] = useState("new");
   const [assumeSession, setAssumeSession] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,7 +39,9 @@ export function TopologyView() {
     setError("");
     try {
       setResult(
-        await api.reachability(src, dst, protocol, port, state, assumeSession),
+        await api.reachability(
+          src, dst, protocol, port, sourcePort, ipVersion, state, assumeSession,
+        ),
       );
     } catch (e) {
       setError(String(e));
@@ -219,9 +223,26 @@ export function TopologyView() {
             </select>
           </label>
           <label>
+            IP family
+            <select value={ipVersion} onChange={(e) => setIpVersion(e.target.value)}>
+              <option value="4">IPv4</option>
+              <option value="6">IPv6</option>
+            </select>
+          </label>
+          <label>
+            Source port
+            <input
+              value={sourcePort}
+              inputMode="numeric"
+              onChange={(e) => setSourcePort(e.target.value)}
+              placeholder="any"
+            />
+          </label>
+          <label>
             Port
             <input
               value={port}
+              inputMode="numeric"
               onChange={(e) => setPort(e.target.value)}
               placeholder="any"
             />
@@ -267,6 +288,8 @@ export function TopologyView() {
               <span>
                 {result.protocol.toUpperCase()}
                 {result.port ? ` / ${result.port}` : ""}
+                {result.source_port ? ` / src:${result.source_port}` : ""}
+                {result.ip_version ? ` / IPv${result.ip_version}` : ""}
                 {` / ${result.state}`}
                 {result.assume_session ? " / session assumed" : ""}
               </span>
@@ -309,7 +332,13 @@ export function TopologyView() {
                   <div className="hop-reason">
                     <b>{step.reason}</b>
                     <small>route: {step.route || "connected/inferred"}</small>
-                    {!!step.nat?.length && <small>NAT: {step.nat.map((item) => item.name).join(", ")}</small>}
+                    {!!step.nat?.length && step.nat.map((item) => (
+                      <small key={`${item.type}:${item.name}`}>
+                        NAT: {item.name} ({item.type}, {item.confidence})
+                        {item.evaluation_order ? ` · ${item.evaluation_order}` : ""}
+                        {item.note ? ` · ${item.note}` : ""}
+                      </small>
+                    ))}
                     {step.trace && (
                       <>
                         <code>{step.trace.raw_config}</code>

@@ -18,11 +18,14 @@ def analyze_reachability(
     configs: list[CanonicalConfig], source: str, destination: str,
     protocol: str, port: int | None, state: str = "new",
     assume_session: bool = False,
+    source_port: int | None = None,
+    ip_version: int | None = None,
 ) -> dict:
     topology = build_topology_model(configs)
     base = {
         "source": source, "destination": destination, "protocol": protocol,
-        "port": port, "state": state, "assume_session": assume_session,
+        "port": port, "source_port": source_port, "ip_version": ip_version, "state": state,
+        "assume_session": assume_session,
         "topology": topology,
     }
     segment_map = {segment.id: segment for config in configs for segment in config.segments}
@@ -53,7 +56,8 @@ def analyze_reachability(
                 if incoming and incoming.startswith("segment:") else None
             )
             allowed, evidence = routed_egress(
-                config_map[device_id], segment_map[destination], ingress_segment
+                config_map[device_id], segment_map[destination], ingress_segment,
+                ip_version,
             )
             route_evidence[device_id] = evidence
             if allowed is not None:
@@ -90,10 +94,13 @@ def analyze_reachability(
         egress = segment_map[after.removeprefix("segment:")]
         step = evaluate_device(
             config_map[device_id], ingress, egress, protocol, port,
-            state, assume_session,
+            state, assume_session, source_port, ip_version,
         )
         step.route = route_evidence.get(device_id) or "connected/inferred"
-        step.nat = nat_effects(config_map[device_id], ingress, egress, protocol, port)
+        step.nat = nat_effects(
+            config_map[device_id], ingress, egress, protocol, port, source_port,
+            ip_version,
+        )
         steps.append(step)
     values = {step.result for step in steps}
     result = (

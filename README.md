@@ -42,7 +42,7 @@ docker compose up -d --build
 - HPE Aruba AOS-CX: Interface、VLAN/SVI、IPv4/IPv6 ACL、`apply access-list` binding、static route
 - Arista EOS: Interface、VLAN/SVI、IPv4/IPv6 ACL、`ip access-group` binding、static route
 - AlliedWare Plus: Interface、VLAN/IP interface、software/hardware ACL、`access-group` / traffic-filter認識、static route
-- VyOS: Interface/VIF、Zone、IPv4/IPv6 Firewall、Zone Policy、Firewall Group、static route、source/destination NAT
+- VyOS: set形式・1.4.x階層形式、Interface/VIF、local/通常Zone、IPv4/IPv6 base/custom chain、jump/default-jump、Firewall Group、state、ECMP/static/terminal route、条件付きsource/destination NAT
 - ExtremeXOS / VOSS: VLAN/SVI、IPv4 address、static route、基本ACL
 - MikroTik RouterOS: VLAN/Interface、Address List、Firewall Filter、static route、source/destination NAT
 - Network OS自動検出（複数特徴のスコアリング）
@@ -55,7 +55,7 @@ docker compose up -d --build
 - Snapshot単位のSQLite保存
 - Snapshot間の通信可否／Policy／Interface・VLAN・Zone Diff（新規ALLOW優先表示）
 - Device・SegmentのTopology Graph（同一サブネット接続は `INFERRED` と明示）
-- Source / Destination / Protocol / Port指定の複数機器Path探索とhop単位Policy trace
+- Source / Destination / IP family / Protocol / Source Port / Destination Port指定の複数機器Path探索とhop単位Policy trace
 - 経路なしを `NO_ROUTE`、Policy根拠不足を `UNKNOWN` として分離
 - 複数ファイル・フォルダ・ZIP import、機器ごとのconfig貼り付け、検出プレビュー、OS手動補正、部分失敗表示
 - Site/Device/Vendor/OS/Zone/VLAN/Segment/Protocol/Port Matrix filterとPolicy filter
@@ -159,8 +159,8 @@ npm run test:e2e
 - 実機接続、Config Push、自動修正は行いません。
 - configは外部サービスへ送信しません。
 - Topologyの機器間リンクは設定内サブネットの重複から推定し、物理配線を保証しません。
-- Path Traceはconnected/static routeの最長一致、VRF、ACL/zone/global chain、指定したconnection stateを評価します。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
-- 一致したNAT ruleと変換値はPath Traceに表示しますが、実セッションテーブルや時刻・ユーザー・URL categoryなどconfig外のランタイム条件は再現しません。`established` / `related` は実セッションの存在を確認できないため通常は `UNKNOWN` とし、画面で「既存セッションを仮定」を明示した場合だけstateful sessionとして評価します。
+- Path Traceはconnected/static routeの最長一致、recursive next-hop、ECMP、blackhole/reject、IPv6 scoped next-hop、VRF、ACL/zone/global chain、指定したconnection stateとIP familyを評価します。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
+- 一致したNAT ruleと変換値、評価順、条件評価の確度はPath Traceに表示します。Rule順序、Interface、IP family、Protocol、Source/Destination Portを評価しますが、実セッションテーブルや時刻・ユーザー・URL categoryなどconfig外のランタイム条件は再現しません。`established` / `related` は実セッションの存在を確認できないため通常は `UNKNOWN` とし、画面で「既存セッションを仮定」を明示した場合だけstateful sessionとして評価します。
 - 未解決オブジェクトや適用関係が曖昧な場合は `UNKNOWN` を優先します。
 - Password / Secret / SNMP CommunityはSnapshot保存前とJSON Export時にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
 - 認証・RBACは未実装です。Composeは`127.0.0.1:8080`だけにbindします。リモート公開時は認証付きReverse Proxyを必須としてください。詳細は[SECURITY.md](SECURITY.md)を参照してください。

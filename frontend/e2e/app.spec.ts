@@ -28,7 +28,11 @@ async function mockApi(page: Page) {
       : path === "/api/parser/capabilities" ? [{ parser_id: "cisco_iosxe", label: "Cisco IOS-XE", interfaces: true, vlans: true, zones: false, routes: true, acl: true, firewall_policy: false, nat: true, ipv6: true, status: "available" }]
       : path === "/api/parser/debug" ? { snapshot_id: "snap-1", items: [] }
       : path === "/api/snapshots" ? []
-      : path === "/api/topology" ? { snapshot_id: "snap-1", nodes: [], edges: [], summary: { devices: 0, segments: 0, adjacencies: 0 } }
+      : path === "/api/topology" ? { snapshot_id: "snap-1", nodes: [
+        { id: "segment:core-user", entity_id: "core-user", type: "segment", label: "USER", subtitle: "10.10.0.0/24", device: "core" },
+        { id: "segment:fw-server", entity_id: "fw-server", type: "segment", label: "SERVER", subtitle: "10.20.0.0/24", device: "fw" },
+      ], edges: [], summary: { devices: 0, segments: 2, adjacencies: 0 } }
+      : path === "/api/reachability" ? { snapshot_id: "snap-1", source: "core-user", destination: "fw-server", protocol: "udp", port: 50000, source_port: 53, ip_version: 6, state: "new", assume_session: false, result: "NO_ROUTE", path: [], steps: [], topology: { nodes: [], edges: [], summary: {} } }
       : { items: [] };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(json) });
   });
@@ -95,4 +99,16 @@ test("stateful解析は既存セッションの仮定を明示できる", async 
   await expect(assumption).toBeVisible();
   await assumption.check();
   await expect(assumption).toBeChecked();
+});
+
+test("Path traceでIP familyとSource portを送信できる", async ({ page }) => {
+  await page.getByRole("button", { name: "Topology / Path" }).click();
+  await page.getByLabel("IP family").selectOption("6");
+  await page.getByLabel("Source port").fill("53");
+  await page.getByLabel("Port", { exact: true }).fill("50000");
+  const request = page.waitForRequest((item) => item.url().includes("/api/reachability"));
+  await page.getByRole("button", { name: "経路を解析" }).click();
+  const url = new URL((await request).url());
+  expect(url.searchParams.get("ip_version")).toBe("6");
+  expect(url.searchParams.get("source_port")).toBe("53");
 });

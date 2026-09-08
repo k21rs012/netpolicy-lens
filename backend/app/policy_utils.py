@@ -65,7 +65,13 @@ def port_matches(values: list[str], port: int | None) -> bool:
     return False
 
 
-def packet_matches(policy: Policy, protocol: str, port: int | None) -> bool:
+def packet_matches(
+    policy: Policy,
+    protocol: str,
+    port: int | None,
+    source_port: int | None = None,
+) -> bool:
     protocols = {value.lower() for value in policy.protocol}
     protocol_ok = protocol.lower() in protocols or bool(protocols & {"ip", "any", "*"})
-    return protocol_ok and port_matches(policy.dst_ports, port)
+    source_ok = source_port is None or port_matches(policy.src_ports, source_port)
+    return protocol_ok and source_ok and port_matches(policy.dst_ports, port)

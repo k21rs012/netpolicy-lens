@@ -1,5 +1,7 @@
 from app.models import CanonicalConfig, Device, Interface, NATRule, Policy, Route, Segment
+from app.nat import nat_effects
 from app.parsers import ParserRegistry
+from app.routing import routed_egress
 from app.topology import analyze_reachability
 
 
@@ -298,3 +300,134 @@ def test_stateful_session_requires_an_explicit_assumption():
     assert "セッションテーブル未取得" in unknown["steps"][0]["reason"]
     assert assumed["result"] == "ALLOW"
     assert assumed["assume_session"] is True
+
+
+def test_recursive_route_resolves_to_connected_egress():
+    config = CanonicalConfig(
+        device=Device(id="r1", hostname="r1", vendor="vyos", network_os="vyos", source_file="r1"),
+        interfaces=[Interface(device="r1", name="wan", segment_id="r1-wan")],
+        segments=[Segment(id="r1-wan", name="WAN", type="interface", device="r1",
+                          networks=["192.0.2.0/24"])],
+        routes=[
+            Route(device="r1", destination="10.20.0.0/16", next_hop="198.51.100.1"),
+            Route(device="r1", destination="198.51.100.0/24", next_hop="192.0.2.2"),
+        ],
+    )
+    destination = Segment(id="r2-lan", name="LAN", type="interface", device="r2",
+                          networks=["10.20.1.0/24"])
+
+    selected, evidence = routed_egress(config, destination)
+
+    assert selected == {"r1-wan"}
+    assert evidence == "10.20.0.0/16"
+
+
+def test_ecmp_scoped_ipv6_and_terminal_routes():
+    config = CanonicalConfig(
+        device=Device(id="r1", hostname="r1", vendor="vyos", network_os="vyos", source_file="r1"),
+        interfaces=[
+            Interface(device="r1", name="wan1", segment_id="r1-wan1"),
+            Interface(device="r1", name="wan2", segment_id="r1-wan2"),
+        ],
+        segments=[
+            Segment(id="r1-wan1", name="WAN1", type="interface", device="r1", networks=["192.0.2.0/24"]),
+            Segment(id="r1-wan2", name="WAN2", type="interface", device="r1", networks=["198.51.100.0/24"]),
+        ],
+        routes=[Route(device="r1", destination="10.0.0.0/8",
+                      next_hops=["192.0.2.2", "198.51.100.2"])],
+    )
+    destination = Segment(id="remote", name="REMOTE", type="interface", device="r2",
+                          networks=["10.1.0.0/16"])
+    assert routed_egress(config, destination)[0] == {"r1-wan1", "r1-wan2"}
+
+    config.routes = [Route(device="r1", destination="2001:db8:2::/64",
+                           next_hop="fe80::2%wan2")]
+    destination.networks = ["2001:db8:2::/64"]
+    assert routed_egress(config, destination)[0] == {"r1-wan2"}
+
+    config.routes = [Route(device="r1", destination="2001:db8:2::/64", route_type="reject")]
+    selected, evidence = routed_egress(config, destination)
+    assert selected == set()
+    assert "reject" in evidence
+
+
+def test_nat_order_interface_port_and_disabled_rules():
+    config = _manual_config()
+    config.device.network_os = "vyos"
+    config.nat = [
+        NATRule(device="edge", name="disabled", type="source", sequence=1,
+                original_src="10.0.1.0/24", translated_src="192.0.2.1", disabled=True),
+        NATRule(device="edge", name="wrong-interface", type="source", sequence=5,
+                original_src="10.0.1.0/24", translated_src="192.0.2.5",
+                out_interfaces=["Vlan999"]),
+        NATRule(device="edge", name="first-match", type="source", sequence=10,
+                original_src="10.0.1.0/24", translated_src="192.0.2.10",
+                destination_ports=["443"], out_interfaces=["Vlan20"]),
+        NATRule(device="edge", name="later", type="source", sequence=20,
+                original_src="10.0.1.0/24", translated_src="192.0.2.20"),
+    ]
+    effects = nat_effects(config, config.segments[0], config.segments[1], "tcp", 443)
+    assert [effect.name for effect in effects] == ["first-match"]
+    assert effects[0].evaluation_order == "destination NAT → filter → source NAT"
+
+
+def test_source_port_is_evaluated_and_unspecified_port_is_partial():
+    config = _manual_config(Policy(
+        id="dns-reply", device="edge", name="IN", sequence=10,
+        action="permit", direction="in", interface="Vlan10",
+        chain_id="in:Vlan10:IN", protocol=["udp"], src_ports=["53"],
+    ))
+
+    unspecified = analyze_reachability([config], "edge-a", "edge-b", "udp", 50000)
+    wrong = analyze_reachability(
+        [config], "edge-a", "edge-b", "udp", 50000, source_port=123
+    )
+    exact = analyze_reachability(
+        [config], "edge-a", "edge-b", "udp", 50000, source_port=53
+    )
+
+    assert unspecified["result"] == "PARTIAL"
+    assert wrong["result"] == "DENY"
+    assert exact["result"] == "ALLOW"
+
+
+def test_vyos_path_trace_selects_ipv4_or_ipv6_chain():
+    raw = """set system host-name dual
+set interfaces ethernet eth0 address 10.0.1.1/24
+set interfaces ethernet eth0 address 2001:db8:1::1/64
+set interfaces ethernet eth1 address 10.0.2.1/24
+set interfaces ethernet eth1 address 2001:db8:2::1/64
+set firewall ipv4 forward filter rule 10 action accept
+set firewall ipv6 forward filter rule 10 action drop
+"""
+    config, _ = ParserRegistry.parse(raw, "dual.conf", parser_id="vyos")
+
+    ipv4 = analyze_reachability(
+        [config], "dual-if-eth0", "dual-if-eth1", "tcp", 443, ip_version=4
+    )
+    ipv6 = analyze_reachability(
+        [config], "dual-if-eth0", "dual-if-eth1", "tcp", 443, ip_version=6
+    )
+
+    assert ipv4["result"] == "ALLOW"
+    assert ipv6["result"] == "DENY"
+
+
+def test_vyos_default_jump_chain_is_evaluated():
+    raw = """set system host-name jumps
+set interfaces ethernet eth0 address 10.0.1.1/24
+set interfaces ethernet eth1 address 10.0.2.1/24
+set firewall ipv4 forward filter default-action accept
+set firewall ipv4 forward filter rule 5 action jump
+set firewall ipv4 forward filter rule 5 jump-target FIRST
+set firewall ipv4 name FIRST default-action jump
+set firewall ipv4 name FIRST default-jump-target LAST
+set firewall ipv4 name LAST default-action drop
+"""
+    config, _ = ParserRegistry.parse(raw, "jumps.conf", parser_id="vyos")
+
+    result = analyze_reachability(
+        [config], "jumps-if-eth0", "jumps-if-eth1", "tcp", 443, ip_version=4
+    )
+
+    assert result["result"] == "DENY"
