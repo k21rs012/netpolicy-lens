@@ -233,7 +233,7 @@ class JunosBaseParser(BaseConfigParser):
         services = [ServiceObject(device=device_id, name=k, protocol=v[0], ports=[v[1]]) for k, v in APPS.items()]
         services.extend(ServiceObject(device=device_id, name=name, protocol=data.get("protocol", "any"), ports=[data.get("destination-port", "any")]) for name, data in custom_apps.items())
         nat_rules: list[NATRule] = []
-        for (kind, rule_set, rule), data in nat_data.items():
+        for sequence, ((kind, rule_set, rule), data) in enumerate(nat_data.items(), 1):
             translation = str(data.get("translation", "")); translated_src = None; translated_dst = None; translated_port = None
             if kind == "source":
                 if translation == "interface": translated_src = "interface-address"
@@ -252,6 +252,9 @@ class JunosBaseParser(BaseConfigParser):
                 original_src=str(data.get("source-address", "any")), original_dst=str(data.get("destination-address", "any")),
                 translated_src=translated_src, translated_dst=translated_dst, protocol=str(data.get("protocol", "any")),
                 original_port=int(original_port) if original_port.isdigit() else None, translated_port=translated_port,
+                sequence=sequence,
+                source_ports=[str(data["source-port"])] if data.get("source-port") else [],
+                destination_ports=[original_port] if original_port else [],
                 trace=self.trace(int(data.get("line", 0)), str(data.get("raw", ""))) if data.get("line") else None))
         return CanonicalConfig(device=device, interfaces=list(ifaces.values()), vlans=vlans, segments=segments,
             zones=list(zones.values()), routes=routes, policies=policies, nat=nat_rules,

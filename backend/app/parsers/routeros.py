@@ -90,7 +90,15 @@ class MikroTikRouterOSParser(BaseConfigParser):
                     original_src=values.get("src-address", "any"), original_dst=values.get("dst-address", "any"),
                     translated_src=values.get("to-addresses") if values.get("chain") != "dstnat" else None,
                     translated_dst=values.get("to-addresses") if values.get("chain") == "dstnat" else None,
-                    protocol=values.get("protocol", "any"), trace=self.trace(number, raw)))
+                    protocol=values.get("protocol", "any"), sequence=number,
+                    source_ports=[values["src-port"]] if values.get("src-port") else [],
+                    destination_ports=[values["dst-port"]] if values.get("dst-port") else [],
+                    in_interfaces=([values["in-interface"]] if values.get("in-interface")
+                                   else interface_lists.get(values.get("in-interface-list", ""), [])),
+                    out_interfaces=([values["out-interface"]] if values.get("out-interface")
+                                    else interface_lists.get(values.get("out-interface-list", ""), [])),
+                    disabled=values.get("disabled", "no").lower() in {"yes", "true"},
+                    trace=self.trace(number, raw)))
         for number, line_end, raw, values in pending_policies:
             if values.get("disabled", "no").lower() in {"yes", "true"}: continue
             action = values.get("action", "drop"); chain = values.get("chain", "forward")

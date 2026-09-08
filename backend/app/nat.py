@@ -51,10 +51,12 @@ def nat_effects(
         return any(_value_overlaps_segment(candidate, segment) for candidate in (candidates or [value]))
 
     ingress_interfaces = {
-        item.name for item in config.interfaces if item.segment_id == ingress.id
+        value for item in config.interfaces if item.segment_id == ingress.id
+        for value in (item.name, item.zone) if value
     }
     egress_interfaces = {
-        item.name for item in config.interfaces if item.segment_id == egress.id
+        value for item in config.interfaces if item.segment_id == egress.id
+        for value in (item.name, item.zone) if value
     }
     rules = sorted(config.nat, key=lambda item: item.sequence if item.sequence is not None else 2**31)
     matched_stages: set[str] = set()

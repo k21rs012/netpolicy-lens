@@ -252,11 +252,17 @@ class PANOSParser(BaseConfigParser):
                     reason=f"unresolved policy reference: {reference}", parser=self.parser_id))
 
         nat_rules: list[NATRule] = []
-        for name, data in nat_data.items():
+        for sequence, (name, data) in enumerate(nat_data.items(), 1):
             lines = nat_lines[name]; line_no = lines[0][0]; line_end = lines[-1][0]
             raw = "\n".join(x[1] for x in lines)
             joined = " ".join(data.get("destination-translation", []))
+            joined_source = " ".join(data.get("source-translation", []))
             translated_dst = next(iter(re.findall(r"(?:translated-address|dynamic-ip-and-port)\s+(\S+)", joined)), None)
+            translated_src = next(iter(re.findall(
+                r"(?:translated-address|dynamic-ip-and-port|dynamic-ip)\s+(\S+)", joined_source
+            )), None)
+            if joined_source and not translated_src and "interface-address" in joined_source:
+                translated_src = "interface-address"
             translated_port_match = re.search(r"translated-port\s+(\d+)", joined)
             nat_type = "destination" if data.get("destination-translation") else "source"
             nat_protocols, nat_ports = resolve_services(data.get("service", []), [])
@@ -264,7 +270,10 @@ class PANOSParser(BaseConfigParser):
             nat_rules.append(NATRule(device=device_id, name=name, type=nat_type,
                 original_src=resolve_addresses(data.get("source", []))[0],
                 original_dst=resolve_addresses(data.get("destination", []))[0],
-                translated_dst=translated_dst, protocol=nat_protocols[0], original_port=original_port,
+                translated_src=translated_src, translated_dst=translated_dst,
+                protocol=nat_protocols[0], original_port=original_port,
+                sequence=sequence, destination_ports=nat_ports if nat_ports != ["any"] else [],
+                in_interfaces=data.get("from", []), out_interfaces=data.get("to", []),
                 translated_port=int(translated_port_match.group(1)) if translated_port_match else None,
                 trace=self.trace(line_no, raw, line_end)))
         return CanonicalConfig(device=device, interfaces=list(interfaces.values()), vlans=vlans, segments=segments, zones=zones,

@@ -274,7 +274,10 @@ class FortiOSParser(BaseConfigParser):
             if (block.values.get("nat") or ["disable"])[0] == "enable":
                 nat_rules.append(NATRule(device=device_id, name=f"policy-{block.name}-snat", type="source",
                     original_src=policy.src[0], original_dst=policy.dst[0], translated_src="interface-address",
-                    protocol=protocols[0], trace=self._block_trace(block)))
+                    protocol=protocols[0], sequence=order,
+                    destination_ports=ports if ports != ["any"] else [],
+                    in_interfaces=source_names, out_interfaces=destination_names,
+                    trace=self._block_trace(block)))
 
         routes: list[Route] = []
         for block in [b for b in blocks if b.section in ("router static", "router static6")]:
