@@ -18,12 +18,13 @@ def test_topology_infers_shared_subnet_adjacency():
     assert edge["label"] == "192.168.20.0/24"
 
 
-def test_multidevice_path_denies_ssh_at_cisco():
+def test_multidevice_path_does_not_apply_transit_destination_deny():
     result = analyze_reachability(sample_configs(), "cisco01-vlan-10", "rtx01-lan1", "tcp", 22)
-    assert result["result"] == "DENY"
+    assert result["result"] == "UNKNOWN"
     assert "device:cisco01" in result["path"] and "device:rtx01" in result["path"]
-    assert result["steps"][0]["result"] == "DENY"
-    assert result["steps"][0]["reason"] == "USER-IN / Rule 20"
+    # Rule 20 denies the transit subnet, not endpoint 192.168.30.0/24.
+    assert result["steps"][0]["result"] == "ALLOW"
+    assert result["steps"][0]["reason"] == "USER-IN / Rule 30"
 
 
 def test_multidevice_https_stays_unknown_without_second_device_evidence():
@@ -46,7 +47,7 @@ def test_topology_and_reachability_api(tmp_path):
     topology = client.get(f"/api/topology?snapshot_id={snapshot_id}")
     assert topology.status_code == 200 and topology.json()["summary"]["devices"] == 2
     reachability = client.get(f"/api/reachability?src=cisco01-vlan-10&dst=rtx01-lan1&protocol=tcp&port=22&snapshot_id={snapshot_id}")
-    assert reachability.status_code == 200 and reachability.json()["result"] == "DENY"
+    assert reachability.status_code == 200 and reachability.json()["result"] == "UNKNOWN"
 
 
 def test_yamaha_path_uses_bound_filter_order_and_ignores_unbound_rules():

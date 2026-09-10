@@ -49,6 +49,8 @@ docker compose up -d --build
 - Network OS自動検出（複数特徴のスコアリング）
 - Canonical Modelとraw config / line trace
 - `ALLOW` / `DENY` / `PARTIAL` / `UNKNOWN` / `SAME_SEGMENT` Matrix
+- Path traceは元・現在の通信アドレス範囲、protocol、送信元/宛先port、IP family、stateを保持し、各hopのinterface/zoneとは分離してPolicyを評価します。Source IP / Destination IPは任意で指定でき、省略時は選択Segmentの範囲を評価します。指定IPは選択Segment内・同一familyに限ります。APIの追加引数は`source_ip` / `destination_ip`、結果と各stepの`flow.original` / `flow.current`に通信情報を返します。
+- NAT候補の条件評価にも通信アドレスを使用しますが、NAT変換はまだ適用しません。この段階では`flow.original`と`flow.current`は同じです。Segment範囲に対する経路探索は既存の代表アドレス方式、複数経路は1経路選択のままで、全範囲・全経路の保証は未対応です。
 - Matrixセル詳細とRule trace
 - Device / Policy / Parser Debug / Capability画面
 - Device詳細（Interface、VLAN、Zone、Route、Policy、NAT、Warning、Unsupported）

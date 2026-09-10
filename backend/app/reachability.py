@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
 from collections import deque
 
+from .flow import create_flow
 from .models import CanonicalConfig
 from .nat import nat_effects
 from .policy_engine import evaluate_device
@@ -11,7 +13,7 @@ from .topology_graph import build_topology_model, segment_node
 
 
 def _result(**values) -> dict:
-    return ReachabilityResult(**values).model_dump()
+    return ReachabilityResult(**values).model_dump(mode="json")
 
 
 def analyze_reachability(
@@ -20,6 +22,8 @@ def analyze_reachability(
     assume_session: bool = False,
     source_port: int | None = None,
     ip_version: int | None = None,
+    source_ip: str | None = None,
+    destination_ip: str | None = None,
 ) -> dict:
     topology = build_topology_model(configs)
     base = {
@@ -32,11 +36,29 @@ def analyze_reachability(
     config_map = {config.device.id: config for config in configs}
     if source not in segment_map or destination not in segment_map:
         raise ValueError("Segment not found")
+    flow = create_flow(segment_map[source], segment_map[destination], protocol, port,
+                       state, source_port, ip_version, source_ip, destination_ip)
+    ip_version = flow.current.ip_version
+    base.update(flow=flow, ip_version=ip_version)
+    route_destination = segment_map[destination].model_copy(
+        update={"networks": list(flow.current.destination_addresses)}
+    )
     if source == destination:
         return _result(**base, result="SAME_SEGMENT", path=[segment_node(source)])
 
+    families = {ipaddress.ip_network(value).version for value in (
+        *flow.current.source_addresses, *flow.current.destination_addresses
+    )}
+    if ip_version is None and len(families) > 1:
+        return _result(**base, result="UNKNOWN", route_reason="複数のIP familyがあります。ip_versionを指定してください")
+
     graph: dict[str, list[str]] = {node.id: [] for node in topology.nodes}
     for edge in topology.edges:
+        if edge.type == "adjacent" and ip_version and not any(
+            ipaddress.ip_network(network).version == ip_version
+            for network in edge.label.split(", ")
+        ):
+            continue
         graph[edge.source].append(edge.target)
         graph[edge.target].append(edge.source)
     start, goal = segment_node(source), segment_node(destination)
@@ -56,7 +78,7 @@ def analyze_reachability(
                 if incoming and incoming.startswith("segment:") else None
             )
             allowed, evidence = routed_egress(
-                config_map[device_id], segment_map[destination], ingress_segment,
+                config_map[device_id], route_destination, ingress_segment,
                 ip_version,
             )
             route_evidence[device_id] = evidence
@@ -94,12 +116,13 @@ def analyze_reachability(
         egress = segment_map[after.removeprefix("segment:")]
         step = evaluate_device(
             config_map[device_id], ingress, egress, protocol, port,
-            state, assume_session, source_port, ip_version,
+            state, assume_session, source_port, ip_version, packet=flow.current,
         )
+        step.flow = flow
         step.route = route_evidence.get(device_id) or "connected/inferred"
         step.nat = nat_effects(
             config_map[device_id], ingress, egress, protocol, port, source_port,
-            ip_version,
+            ip_version, packet=flow.current,
         )
         steps.append(step)
     values = {step.result for step in steps}

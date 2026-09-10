@@ -13,6 +13,7 @@ from .diff import compare_snapshots
 from .parsers import ParserRegistry
 from .sample import SAMPLES
 from .storage import SnapshotStore
+from .flow import FlowInputError
 from .topology import analyze_reachability, build_topology
 
 app = FastAPI(title="NetPolicy Lens API", version="0.1.0")
@@ -211,6 +212,7 @@ def reachability(src: str, dst: str, protocol: str = "tcp", port: int | None = N
                  state: str = "new", assume_session: bool = False,
                  source_port: int | None = None,
                  ip_version: int | None = None,
+                 source_ip: str | None = None, destination_ip: str | None = None,
                  snapshot_id: str | None = None):
     cfgs, resolved = configs(snapshot_id)
     if state not in {"new", "established", "related", "invalid", "untracked"}:
@@ -223,7 +225,8 @@ def reachability(src: str, dst: str, protocol: str = "tcp", port: int | None = N
         raise HTTPException(422, "ip_version must be 4 or 6")
     try: result = analyze_reachability(
         cfgs, src, dst, protocol, port, state, assume_session, source_port,
-        ip_version,
+        ip_version, source_ip, destination_ip,
     )
+    except FlowInputError as exc: raise HTTPException(422, str(exc)) from exc
     except ValueError as exc: raise HTTPException(404, str(exc)) from exc
     return {"snapshot_id": resolved, **result}

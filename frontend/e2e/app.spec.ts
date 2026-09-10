@@ -112,3 +112,32 @@ test("Path traceでIP familyとSource portを送信できる", async ({ page }) 
   expect(url.searchParams.get("ip_version")).toBe("6");
   expect(url.searchParams.get("source_port")).toBe("53");
 });
+
+test("Path traceで特定IPを送信し各hopの通信範囲を表示する", async ({ page }) => {
+  const packet = {
+    source_addresses: ["10.0.1.10/32"], destination_addresses: ["10.0.9.20/32"],
+    protocol: "tcp", source_port: 12345, destination_port: null, ip_version: 4, state: "new",
+  };
+  const flow = { original: packet, current: packet };
+  await page.route("**/api/reachability?**", (route) => route.fulfill({ json: {
+    snapshot_id: "snap-1", source: "core-user", destination: "fw-server", protocol: "tcp",
+    port: null, source_port: 12345, ip_version: 4, state: "new", assume_session: false,
+    result: "ALLOW", path: ["segment:core-user", "device:core", "segment:fw-server"],
+    flow, steps: [{ device: "core", ingress: "core-user", egress: "fw-server",
+      result: "ALLOW", reason: "Rule 10", policy: "rule-10", flow }],
+    topology: { nodes: [], edges: [], summary: {} },
+  } }));
+  await page.getByRole("button", { name: "Topology / Path" }).click();
+  await page.getByLabel("Source IP", { exact: true }).fill("10.0.1.10");
+  await page.getByLabel("Destination IP", { exact: true }).fill("10.0.9.20");
+  await page.getByLabel("Source port").fill("12345");
+  await page.getByLabel("Port", { exact: true }).fill("");
+  const request = page.waitForRequest((item) => item.url().includes("/api/reachability"));
+  await page.getByRole("button", { name: "経路を解析" }).click();
+  const url = new URL((await request).url());
+  expect(url.searchParams.get("source_ip")).toBe("10.0.1.10");
+  expect(url.searchParams.get("destination_ip")).toBe("10.0.9.20");
+  expect(url.searchParams.has("port")).toBe(false);
+  await expect(page.getByText("通信範囲: 10.0.1.10/32 → 10.0.9.20/32")).toBeVisible();
+  await expect(page.getByText("評価アドレス: 10.0.1.10/32 → 10.0.9.20/32")).toBeVisible();
+});

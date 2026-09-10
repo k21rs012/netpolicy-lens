@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .models import Trace
 
@@ -64,6 +64,25 @@ class ChainVerdict(BaseModel):
     chain: str | None = None
 
 
+class Packet(BaseModel):
+    """A host or address range query; never an invented representative IP."""
+
+    model_config = ConfigDict(frozen=True)
+    source_addresses: tuple[str, ...] = ()
+    destination_addresses: tuple[str, ...] = ()
+    protocol: str
+    source_port: int | None = None
+    destination_port: int | None = None
+    ip_version: Literal[4, 6] | None = None
+    state: str = "new"
+
+
+class FlowState(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    original: Packet
+    current: Packet
+
+
 class HopResult(BaseModel):
     device: str
     ingress: str
@@ -75,6 +94,7 @@ class HopResult(BaseModel):
     chains: list[ChainVerdict] = Field(default_factory=list)
     route: str | None = None
     nat: list[NatEffect] = Field(default_factory=list)
+    flow: FlowState | None = None
 
 
 class ReachabilityResult(BaseModel):
@@ -91,3 +111,4 @@ class ReachabilityResult(BaseModel):
     steps: list[HopResult] = Field(default_factory=list)
     route_reason: str | None = None
     topology: TopologyData
+    flow: FlowState | None = None

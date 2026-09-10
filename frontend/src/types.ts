@@ -168,7 +168,21 @@ export interface TopologyData {
   edges: TopologyEdge[];
   summary: { devices: number; segments: number; adjacencies: number };
 }
+export interface Packet {
+  source_addresses: string[];
+  destination_addresses: string[];
+  protocol: string;
+  source_port: number | null;
+  destination_port: number | null;
+  ip_version: 4 | 6 | null;
+  state: string;
+}
+export interface FlowState {
+  original: Packet;
+  current: Packet;
+}
 export interface ReachabilityStep {
+  flow?: FlowState | null;
   device: string;
   ingress: string;
   egress: string;
@@ -195,6 +209,7 @@ export interface ReachabilityStep {
   } | null;
 }
 export interface ReachabilityData {
+  flow?: FlowState | null;
   snapshot_id: string | null;
   source: string;
   destination: string;

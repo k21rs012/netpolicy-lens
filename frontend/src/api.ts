@@ -20,7 +20,7 @@ const json = async <T>(url: string, init?: RequestInit): Promise<T> => {
 export const api = {
   matrix: (protocol = "", port = "") =>
     json<MatrixData>(
-      `/api/matrix?protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}`,
+      `/api/matrix?protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}`,
     ),
   devices: () => json<{ items: Device[] }>("/api/devices"),
   device: (id: string) => json<DeviceDetail>(`/api/devices/${encodeURIComponent(id)}`),
@@ -45,9 +45,11 @@ export const api = {
     ipVersion: string,
     state = "new",
     assumeSession = false,
+    sourceIp = "",
+    destinationIp = "",
   ) =>
     json<ReachabilityData>(
-      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}&port=${encodeURIComponent(port)}${sourcePort ? `&source_port=${encodeURIComponent(sourcePort)}` : ""}${ipVersion ? `&ip_version=${encodeURIComponent(ipVersion)}` : ""}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`,
+      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}${sourcePort ? `&source_port=${encodeURIComponent(sourcePort)}` : ""}${ipVersion ? `&ip_version=${encodeURIComponent(ipVersion)}` : ""}${sourceIp ? `&source_ip=${encodeURIComponent(sourceIp)}` : ""}${destinationIp ? `&destination_ip=${encodeURIComponent(destinationIp)}` : ""}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`,
     ),
   previewConfigs: (files: File[]) => {
     const form = new FormData();

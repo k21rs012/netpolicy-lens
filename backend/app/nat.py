@@ -4,7 +4,7 @@ import ipaddress
 
 from .models import CanonicalConfig, Segment
 from .policy_utils import port_matches
-from .reachability_models import NatEffect
+from .reachability_models import NatEffect, Packet
 
 
 def _value_overlaps_segment(value: str, segment: Segment) -> bool:
@@ -32,7 +32,11 @@ def nat_effects(
     port: int | None,
     source_port: int | None = None,
     ip_version: int | None = None,
+    packet: Packet | None = None,
 ) -> list[NatEffect]:
+    if packet is not None:
+        protocol, port = packet.protocol, packet.destination_port
+        source_port, ip_version = packet.source_port, packet.ip_version
     effects: list[NatEffect] = []
     objects = {item.name: item.values for item in config.address_objects}
 
@@ -48,7 +52,10 @@ def nat_effects(
                 if policy.name == value
                 for address in (policy.src if source else policy.dst)
             ]
-        return any(_value_overlaps_segment(candidate, segment) for candidate in (candidates or [value]))
+        address_scope = segment.model_copy(update={
+            "networks": list(packet.source_addresses if source else packet.destination_addresses)
+        }) if packet else segment
+        return any(_value_overlaps_segment(candidate, address_scope) for candidate in (candidates or [value]))
 
     ingress_interfaces = {
         value for item in config.interfaces if item.segment_id == ingress.id

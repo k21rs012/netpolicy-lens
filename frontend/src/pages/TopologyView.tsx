@@ -16,6 +16,8 @@ export function TopologyView() {
   const [dst, setDst] = useState("");
   const [protocol, setProtocol] = useState("tcp");
   const [port, setPort] = useState("443");
+  const [sourceIp, setSourceIp] = useState("");
+  const [destinationIp, setDestinationIp] = useState("");
   const [sourcePort, setSourcePort] = useState("");
   const [ipVersion, setIpVersion] = useState("4");
   const [state, setState] = useState("new");
@@ -41,6 +43,7 @@ export function TopologyView() {
       setResult(
         await api.reachability(
           src, dst, protocol, port, sourcePort, ipVersion, state, assumeSession,
+          sourceIp, destinationIp,
         ),
       );
     } catch (e) {
@@ -212,6 +215,14 @@ export function TopologyView() {
             </select>
           </label>
           <label>
+            Source IP
+            <input value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} placeholder="省略時はSegment範囲" />
+          </label>
+          <label>
+            Destination IP
+            <input value={destinationIp} onChange={(e) => setDestinationIp(e.target.value)} placeholder="省略時はSegment範囲" />
+          </label>
+          <label>
             Protocol
             <select
               value={protocol}
@@ -295,6 +306,12 @@ export function TopologyView() {
               </span>
               <small>設定ベースの静的推定結果</small>
             </div>
+            {result.flow && (
+              <p>
+                通信範囲: {result.flow.original.source_addresses.join(", ") || "不明"}
+                {" → "}{result.flow.original.destination_addresses.join(", ") || "不明"}
+              </p>
+            )}
             {result.path.length > 0 ? (
               <div className="path-chain">
                 {result.path.map((id, i) => (
@@ -332,6 +349,12 @@ export function TopologyView() {
                   <div className="hop-reason">
                     <b>{step.reason}</b>
                     <small>route: {step.route || "connected/inferred"}</small>
+                    {step.flow && (
+                      <small>
+                        評価アドレス: {step.flow.current.source_addresses.join(", ") || "不明"}
+                        {" → "}{step.flow.current.destination_addresses.join(", ") || "不明"}
+                      </small>
+                    )}
                     {!!step.nat?.length && step.nat.map((item) => (
                       <small key={`${item.type}:${item.name}`}>
                         NAT: {item.name} ({item.type}, {item.confidence})
@@ -356,7 +379,7 @@ export function TopologyView() {
         )}
         <p className="topology-note">
           <CircleHelp />
-          静的ルートと設定上のNAT・通信stateを評価します。動的ルーティング、物理配線、実際の稼働状態は含まれず、根拠不足はUNKNOWNとして扱います。
+          各hopで通信元・通信先を保持し、静的ルートと通信stateを評価します。NATは候補表示のみで、変換後の通信判定は未対応です。動的ルーティング、物理配線、実際の稼働状態は含まれず、根拠不足はUNKNOWNとして扱います。
         </p>
       </section>
     </div>
