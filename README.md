@@ -43,6 +43,7 @@ docker compose up -d --build
 - Arista EOS: Interface、VLAN/SVI、IPv4/IPv6 ACL、`ip access-group` binding、static route
 - AlliedWare Plus: Interface、VLAN/IP interface、software/hardware ACL、`access-group` / traffic-filter認識、static route
 - VyOS: set形式・1.4.x階層形式、Interface/VIF、local/通常Zone、IPv4/IPv6 base/custom chain、jump/default-jump、Firewall Group、state、ECMP/static/terminal route、条件付きsource/destination NAT
+- VyOS Firewallの未解決address/network/port/interface groupは、参照名・設定行をWarningに残し、該当する通信をPARTIALとして評価します。否定付きport/interface groupも未評価条件として扱います。既存SnapshotへParser修正を反映するにはconfigを再importしてください。
 - ExtremeXOS / VOSS: VLAN/SVI、IPv4 address、static route、基本ACL
 - MikroTik RouterOS: VLAN/Interface、Address List、Firewall Filter、static route、source/destination NAT
 - Network OS自動検出（複数特徴のスコアリング）

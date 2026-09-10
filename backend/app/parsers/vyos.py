@@ -134,6 +134,8 @@ class VyOSParser(BaseConfigParser):
         base_chains: set[ChainKey] = set()
         disabled_rules: set[RuleKey] = set()
         partial_rules: dict[RuleKey, list[str]] = defaultdict(list)
+        group_references: dict[RuleKey, dict[str, tuple[str, str, int, str, str]]] = defaultdict(dict)
+        typed_groups: dict[tuple[str, str], list[str]] = defaultdict(list)
         address_groups: dict[str, list[str]] = defaultdict(list)
         port_groups: dict[str, list[str]] = defaultdict(list)
         interface_groups: dict[str, list[str]] = defaultdict(list)
@@ -198,6 +200,7 @@ class VyOSParser(BaseConfigParser):
                           else interface_groups if kind == "interface-group"
                           else address_groups)
                 target[_unquote(name)].append(_unquote(value))
+                typed_groups[(kind, _unquote(name))].append(_unquote(value))
                 continue
 
             if chain := _chain_path(line, "default-action"):
@@ -242,11 +245,15 @@ class VyOSParser(BaseConfigParser):
                     side, kind, group = match.groups()
                     suffix = "port group" if kind == "port-group" else "address group"
                     rules[key][f"{side} {suffix}"] = _unquote(group)
+                    group_references[key][f"{side} {suffix}"] = (kind, _unquote(group), number, rest, line)
                     if _unquote(group).startswith("!") and kind == "port-group":
                         partial_rules[key].append(rest)
                     continue
                 if match := re.match(r"(inbound|outbound)-interface group (\S+)", rest):
                     rules[key][f"{match.group(1)}-interface group"] = _unquote(match.group(2))
+                    group_references[key][f"{match.group(1)}-interface group"] = (
+                        "interface-group", _unquote(match.group(2)), number, rest, line
+                    )
                     if _unquote(match.group(2)).startswith("!"):
                         partial_rules[key].append(rest)
                     continue
@@ -368,22 +375,51 @@ class VyOSParser(BaseConfigParser):
             key = family, name, sequence
             if key in disabled_rules:
                 continue
+            unsupported = list(partial_rules.get(key, []))
+            resolved_groups: dict[str, list[str]] = {}
+            unresolved_groups: set[str] = set()
+            for field, (kind, group, number, match_text, command) in group_references[key].items():
+                values = typed_groups.get((kind, group.removeprefix("!")))
+                if not values:
+                    # Unknown conditions remain possible matches, even for
+                    # deny rules, so a later permit cannot hide uncertainty.
+                    unresolved_groups.add(field)
+                    unsupported.append(f"unresolved group: {match_text}")
+                    warnings.append(ParserWarning(
+                        device=device_id, line=number, config=command,
+                        reason=f"unresolved {kind} {group}; rule marked PARTIAL",
+                        parser=self.parser_id,
+                    ))
+                else:
+                    resolved_groups[field] = values
+
+            def group_values(field: str, direct: str, fallback: list[str]) -> list[str]:
+                if field in unresolved_groups:
+                    return fallback
+                # Negated port/interface membership is not evaluated yet.
+                # Do not use positive membership to skip a possible match.
+                if (data.get(field, "").startswith("!")
+                        and ("port group" in field or "interface group" in field)):
+                    return fallback
+                return resolved_groups.get(field, [data[direct]] if data.get(direct) else fallback)
+
             source_group = data.get("source address group", "")
             destination_group = data.get("destination address group", "")
-            source = address_groups.get(source_group.lstrip("!"), [data.get("source address", "any")])
-            destination = address_groups.get(destination_group.lstrip("!"), [data.get("destination address", "any")])
-            src_negate = source_group.startswith("!") or bool(source and source[0].startswith("!"))
-            dst_negate = destination_group.startswith("!") or bool(destination and destination[0].startswith("!"))
+            source = group_values("source address group", "source address", ["any"])
+            destination = group_values("destination address group", "destination address", ["any"])
+            src_negate = ("source address group" not in unresolved_groups
+                          and (source_group.startswith("!") or source[0].startswith("!")))
+            dst_negate = ("destination address group" not in unresolved_groups
+                          and (destination_group.startswith("!") or destination[0].startswith("!")))
             source = [value.removeprefix("!") for value in source]
             destination = [value.removeprefix("!") for value in destination]
-            source_ports = port_groups.get(data.get("source port group", "").lstrip("!"), [data.get("source port", "any")])
-            destination_ports = port_groups.get(data.get("destination port group", "").lstrip("!"), [data.get("destination port", "any")])
+            source_ports = group_values("source port group", "source port", ["any"])
+            destination_ports = group_values("destination port group", "destination port", ["any"])
             source_zone, destination_zone = zone_policies.get((family, name), (None, None))
             base_chain = name.removeprefix("base-") if (family, name) in base_chains else None
             direction = ({"input": "in", "output": "out"}.get(base_chain, base_chain)
                          if base_chain else "unknown")
             lines = rule_lines[key]
-            unsupported = partial_rules.get(key, [])
             default_action = default_map.get(chain_defaults.get((family, name), ""))
             policies.append(Policy(
                 id=f"{device_id}:{family}:{name}:{sequence}", device=device_id,
@@ -394,10 +430,8 @@ class VyOSParser(BaseConfigParser):
                 dst_ports=destination_ports, src_negate=src_negate, dst_negate=dst_negate,
                 action=action_map.get(data.get("action", ""), "unknown"),
                 direction="zone" if source_zone else direction,
-                in_interfaces=(interface_groups.get(data.get("inbound-interface group", ""), [])
-                               or ([data["inbound-interface name"]] if data.get("inbound-interface name") else [])),
-                out_interfaces=(interface_groups.get(data.get("outbound-interface group", ""), [])
-                                or ([data["outbound-interface name"]] if data.get("outbound-interface name") else [])),
+                in_interfaces=group_values("inbound-interface group", "inbound-interface name", []),
+                out_interfaces=group_values("outbound-interface group", "outbound-interface name", []),
                 from_zone=source_zone, to_zone=destination_zone,
                 confidence=Confidence.PARTIAL if unsupported else Confidence.EXACT,
                 chain_id=(f"zone:{family}:{source_zone}:{destination_zone}"

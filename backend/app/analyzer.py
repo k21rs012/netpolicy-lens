@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 from typing import Literal
 
-from .models import CanonicalConfig, MatrixCell, Policy, Segment
+from .models import CanonicalConfig, Confidence, MatrixCell, Policy, Segment
 from .policy_utils import policy_chain_key, policy_order, service_labels
 
 
@@ -107,7 +107,8 @@ def build_matrix(configs: list[CanonicalConfig]) -> list[MatrixCell]:
             # A deny in any applied chain overrides a permit for that same
             # service; keep mixed services as PARTIAL.
             allowed = [label for label in allowed if label not in denied]
-            partial = any(coverage == "PARTIAL" for _, coverage, _ in matching)
+            partial = any(coverage == "PARTIAL" or policy.confidence != Confidence.EXACT
+                          or policy.unsupported_matches for policy, coverage, _ in matching)
             result = "PARTIAL" if partial or allowed and denied else "ALLOW" if allowed else "DENY" if denied else "UNKNOWN"
             traces = [{"device": policy.device, "interface": policy.interface, "policy": policy.name, "sequence": policy.sequence,
                        "action": policy.action, "service": ", ".join(labels), "coverage": coverage,
