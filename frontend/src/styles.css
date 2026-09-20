@@ -106,3 +106,56 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
  .path-panel .path-controls .session-assumption {align-self:flex-start}
  .path-panel .path-verdict>small {margin-left:0}
 }
+
+/* Constrain dialogs to the viewport, including grid intrinsic sizing. */
+.modal-backdrop {grid-template-columns:minmax(0,1fr)}
+.modal {min-width:0;justify-self:center;overflow-y:auto;max-height:90dvh}
+.import-modal>* {flex-shrink:0}
+.import-modal .paste-configs {flex-shrink:1}
+.modal-actions {flex-wrap:wrap}
+.modal-actions button {flex-shrink:0;white-space:nowrap}
+.drawer-head {gap:12px}
+.drawer-head>div {min-width:0;flex:1;overflow-wrap:anywhere}
+.drawer-head>.icon,.drawer-head h2 svg {flex-shrink:0}
+.drawer-head h2 {min-width:0;overflow-wrap:anywhere}
+.debug-output>div {height:auto;min-height:50px;flex-wrap:wrap;gap:8px}
+.debug-output>div button {flex-shrink:0;white-space:nowrap}
+.debug-list button>span {min-width:0;overflow-wrap:anywhere}
+.debug-list button>svg {flex-shrink:0}
+.section-head {flex-wrap:wrap;gap:12px}
+.section-head>div {min-width:0}
+.topology-legend {flex-wrap:wrap;gap:8px 15px}
+.topology-legend span {white-space:nowrap}
+.diff-controls>div {min-width:0}
+.comm-change {grid-template-columns:minmax(0,1.5fr) auto minmax(0,1fr)}
+.comm-change>code {grid-column:1/-1;overflow-wrap:anywhere}
+.comm-change>div,.comm-path>span {min-width:0;overflow-wrap:anywhere}
+.comm-path>span {flex:1}
+.comm-path>svg,.result-shift>svg {flex-shrink:0}
+@media(max-width:1100px) {
+ .comm-change {grid-template-columns:minmax(0,1fr) auto}
+ .service-deltas {grid-column:1/-1}
+}
+@media(max-width:600px) {
+ .modal {max-height:94dvh}
+ .import-modal .modal-actions>span {flex-basis:100%}
+ .modal-actions button {flex:1}
+ .device-drawer {padding:0}
+ .comm-change {grid-template-columns:minmax(0,1fr)}
+ .service-deltas {grid-column:auto}
+ .header-actions,.header-actions button {flex-shrink:0}
+ header {gap:8px}
+ header>div:first-child {min-width:0}
+ h1 {font-size:18px;overflow-wrap:anywhere}
+}
+
+.capability .stage {display:inline-flex;white-space:nowrap}
+.trace {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+.trace>.status {position:static;grid-column:2;grid-row:1;align-self:start}
+.trace-line {min-width:0;flex-wrap:wrap}
+.trace-line>span {flex-shrink:0}
+.trace-line>b {min-width:0;flex:1;overflow-wrap:anywhere}
+.trace-line>small {flex-basis:100%;padding-left:28px;overflow-wrap:anywhere}
+.trace-rule {grid-column:1/-1;margin-top:0;min-width:0}
+.trace-rule>div {min-width:0;overflow-wrap:anywhere}
+.trace-rule>svg {flex-shrink:0}

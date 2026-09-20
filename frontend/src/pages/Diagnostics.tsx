@@ -28,41 +28,43 @@ export function Capabilities({ items }: { items: Capability[] }) {
           </p>
         </div>
       </div>
-      <table className="data-table capability">
-        <thead>
-          <tr>
-            <th>Network OS</th>
-            {keys.map((k) => (
-              <th key={k[0]}>{k[1]}</th>
-            ))}
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((c) => (
-            <tr key={c.parser_id}>
-              <td>
-                <b>{c.label}</b>
-                <small>{c.parser_id}</small>
-              </td>
-              {keys.map(([k]) => (
-                <td key={k}>
-                  {c[k] ? (
-                    <Check className="yes" />
-                  ) : (
-                    <span className="dash">—</span>
-                  )}
-                </td>
+      <div className="table-scroll" role="region" aria-label="Network OS対応表" tabIndex={0}>
+        <table className="data-table capability">
+          <thead>
+            <tr>
+              <th>Network OS</th>
+              {keys.map((k) => (
+                <th key={k[0]}>{k[1]}</th>
               ))}
-              <td>
-                <span className={`stage ${c.status}`}>
-                  {c.status === "available" ? "利用可能" : "予定"}
-                </span>
-              </td>
+              <th>Status</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {items.map((c) => (
+              <tr key={c.parser_id}>
+                <td>
+                  <b>{c.label}</b>
+                  <small>{c.parser_id}</small>
+                </td>
+                {keys.map(([k]) => (
+                  <td key={k}>
+                    {c[k] ? (
+                      <Check className="yes" />
+                    ) : (
+                      <span className="dash">—</span>
+                    )}
+                  </td>
+                ))}
+                <td>
+                  <span className={`stage ${c.status}`}>
+                    {c.status === "available" ? "利用可能" : "予定"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

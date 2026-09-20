@@ -130,7 +130,7 @@ export default function App() {
             >
               <RefreshCw />
             </button>
-            <button className="primary" onClick={() => setDialog(true)}>
+            <button className="primary" aria-label="Config Import" onClick={() => setDialog(true)}>
               <Plus />
               <span>Config Import</span>
             </button>
