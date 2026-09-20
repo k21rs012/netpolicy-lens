@@ -47,9 +47,10 @@ export const api = {
     assumeSession = false,
     sourceIp = "",
     destinationIp = "",
+    icmpType = "",
   ) =>
     json<ReachabilityData>(
-      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}${sourcePort ? `&source_port=${encodeURIComponent(sourcePort)}` : ""}${ipVersion ? `&ip_version=${encodeURIComponent(ipVersion)}` : ""}${sourceIp ? `&source_ip=${encodeURIComponent(sourceIp)}` : ""}${destinationIp ? `&destination_ip=${encodeURIComponent(destinationIp)}` : ""}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`,
+      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}${sourcePort ? `&source_port=${encodeURIComponent(sourcePort)}` : ""}${ipVersion ? `&ip_version=${encodeURIComponent(ipVersion)}` : ""}${sourceIp ? `&source_ip=${encodeURIComponent(sourceIp)}` : ""}${destinationIp ? `&destination_ip=${encodeURIComponent(destinationIp)}` : ""}${icmpType !== "" ? `&icmp_type=${encodeURIComponent(icmpType)}` : ""}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`,
     ),
   previewConfigs: (files: File[]) => {
     const form = new FormData();

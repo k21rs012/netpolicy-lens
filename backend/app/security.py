@@ -12,9 +12,10 @@ MASK = "<masked>"
 # remains visible for troubleshooting while only the credential value is
 # removed from stored snapshots and API responses.
 SECRET_PATTERNS = (
+    re.compile(r"(?i)^(\s*snmp-server\s+host\s+\S+\s+version\s+(?:1|2c)\s+)\S+(.*)$"),
     re.compile(r"(?i)^(\s*(?:enable\s+)?secret(?:\s+\d+)?\s+)\S+.*$"),
     re.compile(r"(?i)^(\s*(?:set\s+)?password(?:\s+encrypted)?\s+)\S+.*$"),
-    re.compile(r"(?i)^(\s*username\s+\S+\s+(?:password|secret)(?:\s+\d+)?\s+)\S+.*$"),
+    re.compile(r"(?i)^(\s*username\s+\S+\s+(?:privilege\s+\d+\s+)?(?:password|secret)(?:\s+\d+)?\s+)\S+.*$"),
     re.compile(r"(?i)^(\s*snmp-server\s+community\s+)\S+(.*)$"),
     re.compile(r"(?i)^(\s*set\s+snmp\s+community\s+)\S+(.*)$"),
     re.compile(r"(?i)^(\s*set\s+system\s+login\s+user\s+\S+\s+authentication\s+encrypted-password\s+)\S+.*$"),

@@ -213,6 +213,7 @@ def reachability(src: str, dst: str, protocol: str = "tcp", port: int | None = N
                  source_port: int | None = None,
                  ip_version: int | None = None,
                  source_ip: str | None = None, destination_ip: str | None = None,
+                 icmp_type: int | None = None,
                  snapshot_id: str | None = None):
     cfgs, resolved = configs(snapshot_id)
     if state not in {"new", "established", "related", "invalid", "untracked"}:
@@ -225,7 +226,7 @@ def reachability(src: str, dst: str, protocol: str = "tcp", port: int | None = N
         raise HTTPException(422, "ip_version must be 4 or 6")
     try: result = analyze_reachability(
         cfgs, src, dst, protocol, port, state, assume_session, source_port,
-        ip_version, source_ip, destination_ip,
+        ip_version, source_ip, destination_ip, icmp_type,
     )
     except FlowInputError as exc: raise HTTPException(422, str(exc)) from exc
     except ValueError as exc: raise HTTPException(404, str(exc)) from exc

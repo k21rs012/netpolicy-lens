@@ -170,3 +170,13 @@ npm run test:e2e
 - Uploadは1ファイル20 MiB、1回500ファイル、ZIP展開後50 MiBに制限しています。
 
 Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。
+
+
+### AlliedWare Plus VLAN hardware filter
+
+- `access-list hardware` → `vlan access-map` / `match access-group` → `vlan filter ... vlan-list ... input` の関連付けを解析します。VLAN一覧の範囲・カンマ指定、同じACLの複数VLANへの適用を保持します。
+- ハードウェアACLは設定順（明示sequenceがある場合はsequence順）に評価し、未一致時は通常転送として扱います。`access-list 10`等の管理用standard ACLは中継VLANへ自動適用しません。
+- Path traceのICMP選択時にtypeを指定できます。IPv4のping要求は8、応答は0です。type未指定でtype条件付きルールに一致する可能性がある場合はPARTIALです。APIは`icmp_type`（0〜255）を受け取ります。
+- Matrixはセグメント全体・全サービスの概要です。DNS、DHCP、ICMP typeなどの例外と拒否が混在すればPARTIALになります。特定通信はPath traceでIP・port・ICMP typeを指定してください。
+- 未定義access-map/ACL、未対応map条件、port/global/QoSフィルターとの併用は警告とPARTIALで扱います。VLAN ACLが適用されていない方向、同一VLAN内のL2経路、管理プレーンのアクセス制御は今回の判定対象外です。既存Snapshotにはconfigの再importが必要です。
+- 検証根拠：[x540L 5.5.5公式リファレンス：ハードウェアパケットフィルター](https://www.allied-telesis.co.jp/support/list/awp/rel/5.5.5-2.1/613-003277_L/docs/overview-30.html)。実機の稼働状態・OSバージョン固有の差異は別途確認が必要です。

@@ -75,6 +75,7 @@ class Packet(BaseModel):
     destination_port: int | None = None
     ip_version: Literal[4, 6] | None = None
     state: str = "new"
+    icmp_type: int | None = Field(default=None, ge=0, le=255)
 
 
 class FlowState(BaseModel):
@@ -105,6 +106,7 @@ class ReachabilityResult(BaseModel):
     source_port: int | None = None
     ip_version: Literal[4, 6] | None = None
     state: str = "new"
+    icmp_type: int | None = Field(default=None, ge=0, le=255)
     assume_session: bool = False
     result: PublicVerdict
     path: list[str] = Field(default_factory=list)

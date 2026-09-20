@@ -18,6 +18,7 @@ def create_flow(
     source: Segment, destination: Segment, protocol: str, port: int | None,
     state: str, source_port: int | None, ip_version: int | None,
     source_ip: str | None = None, destination_ip: str | None = None,
+    icmp_type: int | None = None,
 ) -> FlowState:
     def networks(segment: Segment) -> list[IPNetwork]:
         values = []
@@ -28,6 +29,8 @@ def create_flow(
                 continue
         return values
 
+    if icmp_type is not None and (not 0 <= icmp_type <= 255 or protocol not in {"icmp", "icmpv6"}):
+        raise FlowInputError("icmp_type requires ICMP and a value between 0 and 255")
     source_networks, destination_networks = networks(source), networks(destination)
     family = ip_version
     addresses: list[IPAddress | None] = []
@@ -65,6 +68,6 @@ def create_flow(
         source_addresses=scope(source_networks, addresses[0]),
         destination_addresses=scope(destination_networks, addresses[1]),
         protocol=protocol, source_port=source_port, destination_port=port,
-        ip_version=family, state=state,
+        ip_version=family, state=state, icmp_type=icmp_type,
     )
     return FlowState(original=packet, current=packet)

@@ -108,7 +108,8 @@ def build_matrix(configs: list[CanonicalConfig]) -> list[MatrixCell]:
             # service; keep mixed services as PARTIAL.
             allowed = [label for label in allowed if label not in denied]
             partial = any(coverage == "PARTIAL" or policy.confidence != Confidence.EXACT
-                          or policy.unsupported_matches for policy, coverage, _ in matching)
+                          or policy.unsupported_matches or policy.icmp_type is not None
+                          for policy, coverage, _ in matching)
             result = "PARTIAL" if partial or allowed and denied else "ALLOW" if allowed else "DENY" if denied else "UNKNOWN"
             traces = [{"device": policy.device, "interface": policy.interface, "policy": policy.name, "sequence": policy.sequence,
                        "action": policy.action, "service": ", ".join(labels), "coverage": coverage,

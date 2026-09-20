@@ -15,6 +15,7 @@ export function TopologyView() {
   const [src, setSrc] = useState("");
   const [dst, setDst] = useState("");
   const [protocol, setProtocol] = useState("tcp");
+  const [icmpType, setIcmpType] = useState("8");
   const [port, setPort] = useState("443");
   const [sourceIp, setSourceIp] = useState("");
   const [destinationIp, setDestinationIp] = useState("");
@@ -42,8 +43,9 @@ export function TopologyView() {
     try {
       setResult(
         await api.reachability(
-          src, dst, protocol, port, sourcePort, ipVersion, state, assumeSession,
-          sourceIp, destinationIp,
+          src, dst, protocol, protocol === "icmp" ? "" : port,
+          protocol === "icmp" ? "" : sourcePort, ipVersion, state, assumeSession,
+          sourceIp, destinationIp, protocol === "icmp" ? icmpType : "",
         ),
       );
     } catch (e) {
@@ -234,14 +236,25 @@ export function TopologyView() {
           </label>
           <label>
             IP family
-            <select value={ipVersion} onChange={(e) => setIpVersion(e.target.value)}>
+            <select value={ipVersion} onChange={(e) => {
+              setIpVersion(e.target.value);
+              setIcmpType(e.target.value === "6" ? "128" : "8");
+            }}>
               <option value="4">IPv4</option>
               <option value="6">IPv6</option>
             </select>
           </label>
+          {protocol === "icmp" && (
+            <label>
+              ICMP type
+              <input type="number" min="0" max="255" value={icmpType}
+                onChange={(e) => setIcmpType(e.target.value)} placeholder="未指定" />
+            </label>
+          )}
           <label>
             Source port
             <input
+              disabled={protocol === "icmp"}
               value={sourcePort}
               inputMode="numeric"
               onChange={(e) => setSourcePort(e.target.value)}
@@ -251,6 +264,7 @@ export function TopologyView() {
           <label>
             Port
             <input
+              disabled={protocol === "icmp"}
               value={port}
               inputMode="numeric"
               onChange={(e) => setPort(e.target.value)}
@@ -302,6 +316,7 @@ export function TopologyView() {
                 {result.port ? ` / ${result.port}` : ""}
                 {result.source_port ? ` / src:${result.source_port}` : ""}
                 {result.ip_version ? ` / IPv${result.ip_version}` : ""}
+                {result.icmp_type != null ? ` / type:${result.icmp_type}` : ""}
                 {` / ${result.state}`}
                 {result.assume_session ? " / session assumed" : ""}
               </span>

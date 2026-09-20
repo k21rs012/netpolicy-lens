@@ -181,7 +181,7 @@ export function Policies({ items }: { items: Policy[] }) {
                 </td>
                 <td>{p.from_zone || p.src.join(", ")}</td>
                 <td>{p.to_zone || p.dst.join(", ")}</td>
-                <td>{p.protocol.join(", ").toUpperCase()}</td>
+                <td>{p.protocol.join(", ").toUpperCase()}{p.icmp_type != null ? ` / type:${p.icmp_type}` : ""}</td>
                 <td>
                   <code>{p.dst_ports.join(", ")}</code>
                 </td>

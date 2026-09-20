@@ -77,6 +77,7 @@ export interface Policy {
   src: string[];
   dst: string[];
   protocol: string[];
+  icmp_type?: number | null;
   dst_ports: string[];
   action: string;
   interface?: string;
@@ -176,6 +177,7 @@ export interface Packet {
   destination_port: number | null;
   ip_version: 4 | 6 | null;
   state: string;
+  icmp_type?: number | null;
 }
 export interface FlowState {
   original: Packet;
@@ -218,6 +220,7 @@ export interface ReachabilityData {
   source_port: number | null;
   ip_version: 4 | 6 | null;
   state: string;
+  icmp_type?: number | null;
   assume_session: boolean;
   result: Result;
   path: string[];

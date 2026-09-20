@@ -24,6 +24,7 @@ def analyze_reachability(
     ip_version: int | None = None,
     source_ip: str | None = None,
     destination_ip: str | None = None,
+    icmp_type: int | None = None,
 ) -> dict:
     topology = build_topology_model(configs)
     base = {
@@ -37,9 +38,9 @@ def analyze_reachability(
     if source not in segment_map or destination not in segment_map:
         raise ValueError("Segment not found")
     flow = create_flow(segment_map[source], segment_map[destination], protocol, port,
-                       state, source_port, ip_version, source_ip, destination_ip)
+                       state, source_port, ip_version, source_ip, destination_ip, icmp_type)
     ip_version = flow.current.ip_version
-    base.update(flow=flow, ip_version=ip_version)
+    base.update(flow=flow, ip_version=ip_version, icmp_type=icmp_type)
     route_destination = segment_map[destination].model_copy(
         update={"networks": list(flow.current.destination_addresses)}
     )

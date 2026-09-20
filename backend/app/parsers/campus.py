@@ -46,11 +46,18 @@ def parse_acl_rule(parser: BaseConfigParser, device: str, acl: str, line: str, n
         dst_ports = [values[0] if op == "eq" else f"{op} {'-'.join(values)}"]
         pos += len(values)
     remaining = [token for token in tokens[pos:] if token not in {"log", "log-input"}]
+    icmp_type = None
+    if parser.parser_id == "alliedware_plus" and protocol in {"icmp", "icmpv6"}:
+        if len(remaining) >= 2 and remaining[0] == "icmp-type" and remaining[1].isdigit():
+            if 0 <= int(remaining[1]) <= 255:
+                icmp_type = int(remaining[1])
+                remaining = remaining[2:]
     states = ["established"] if "established" in remaining else []
     remaining = [token for token in remaining if token != "established"]
     return Policy(id=f"{device}:{acl}:{sequence}", device=device, name=acl, sequence=sequence,
         src=[src], dst=[dst], protocol=[protocol], src_ports=src_ports, dst_ports=dst_ports,
-        action=action, states=states, confidence=Confidence.PARTIAL if remaining else Confidence.EXACT,
+        action=action, states=states, icmp_type=icmp_type, unsupported_matches=remaining,
+        confidence=Confidence.PARTIAL if remaining else Confidence.EXACT,
         trace=parser.trace(number, line))
 
 
@@ -192,7 +199,7 @@ class AristaEOSParser(CampusSwitchParser):
 @ParserRegistry.register
 class AlliedWarePlusParser(CampusSwitchParser):
     parser_id = "alliedware_plus"; vendor = "allied"; network_os = "alliedware-plus"; platform = "Allied Telesis Switch"
-    acl_pattern = r"(?:ip |ipv6 )?access-list(?: hardware)?\s+(.+)"
+    acl_pattern = r"(?:ip |ipv6 )?access-list(?: hardware| standard| extended)?\s+(.+)"
     capabilities = ParserCapabilities(parser_id=parser_id, label="AlliedWare Plus", interfaces=True,
         vlans=True, routes=True, acl=True, ipv6=True)
     @classmethod
@@ -202,6 +209,9 @@ class AlliedWarePlusParser(CampusSwitchParser):
         score += .24 if re.search(r"(?m)^interface port\d+\.\d+\.\d+", config) else 0
         score += .2 if re.search(r"(?m)^access-list hardware ", config) else 0
         score += .16 if re.search(r"(?m)^(?:ipv6 )?traffic-filter ", config) else 0
+        score += .18 if re.search(r"(?mi)^switch \d+ provision x[0-9]+", config) else 0
+        score += .12 if re.search(r"(?m)^atmf network-name ", config) else 0
+        score += .12 if re.search(r"(?m)^vlan filter \S+ vlan-list ", config) else 0
         return min(score, 1.0)
 
     def parse(self) -> CanonicalConfig:
@@ -211,15 +221,20 @@ class AlliedWarePlusParser(CampusSwitchParser):
         rewritten: list[str] = []
         source_lines: list[int] = []
         active_acl: str | None = None
-        for source_line, raw in enumerate(self.lines, 1):
+        acl_sequences: dict[str, int] = defaultdict(int)
+        from .allied import expanded_interface_lines
+        for source_line, raw in expanded_interface_lines(self.lines):
             line = raw.strip()
             if match := re.match(r"vlan (\d+) name (\S+)", line):
                 rewritten.extend([f"vlan {match.group(1)}", f" name {match.group(2)}"])
                 source_lines.extend([source_line, source_line]); continue
             if match := re.match(r"access-list (\S+) ((?:permit|deny) .+)", line):
                 if active_acl != match.group(1):
-                    rewritten.append(f"ip access-list {match.group(1)}"); source_lines.append(source_line); active_acl = match.group(1)
-                rewritten.append(f" {match.group(2)}"); source_lines.append(source_line); continue
+                    standard = match.group(1).isdigit() and (1 <= int(match.group(1)) <= 99 or 1300 <= int(match.group(1)) <= 1999)
+                    rewritten.append(f"ip access-list {'standard ' if standard else ''}{match.group(1)}"); source_lines.append(source_line); active_acl = match.group(1)
+                acl_sequences[match.group(1)] += 10
+                rewritten.append(f" {acl_sequences[match.group(1)]} {match.group(2)}"); source_lines.append(source_line); continue
+            active_acl = None
             rewritten.append(raw); source_lines.append(source_line)
         original_config, original_lines = self.config, self.lines
         self.config, self.lines = "\n".join(rewritten), rewritten
@@ -302,4 +317,6 @@ class AlliedWarePlusParser(CampusSwitchParser):
                         policy.chain_id = f"{direction}:{iface.name}:{policy.name}"
                         if iface.segment_id and direction == "in": policy.src_segments = [iface.segment_id]
                         if iface.segment_id and direction == "out": policy.dst_segments = [iface.segment_id]
+        from .allied import apply_vlan_filters
+        apply_vlan_filters(self, result)
         return result

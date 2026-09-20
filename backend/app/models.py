@@ -119,6 +119,7 @@ class Policy(BaseModel):
     jump_target: str | None = None
     default_jump_target: str | None = None
     states: list[str] = Field(default_factory=list)
+    icmp_type: int | None = Field(default=None, ge=0, le=255)
     ip_version: Literal[4, 6] | None = None
     unsupported_matches: list[str] = Field(default_factory=list)
     entrypoint: bool = True

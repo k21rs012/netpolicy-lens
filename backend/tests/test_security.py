@@ -47,3 +47,20 @@ def test_snapshot_masks_raw_trace_and_warning_and_exposes_warning_api(tmp_path):
     assert response.status_code == 200
     assert response.json()["count"] == 1
     assert response.json()["items"][0]["config"] == "snmp-server community <masked> RW"
+
+
+def test_allied_privileged_user_and_snmp_destination_credentials_are_masked(tmp_path):
+    raw = """! AlliedWare Plus
+hostname mask-test
+username operator privilege 15 password 8 synthetic-password-hash
+snmp-server community synthetic-community 10
+snmp-server host 192.0.2.10 version 2c synthetic-community
+"""
+    config = ParserRegistry.parse(raw, "synthetic.conf")[0]
+    store = SnapshotStore(str(tmp_path / "allied-mask.db"))
+    snapshot_id = store.create("mask-test", [("synthetic.conf", raw, config)])
+    with sqlite3.connect(store.path) as connection:
+        saved = connection.execute("SELECT raw_config FROM configs WHERE snapshot_id=?", (snapshot_id,)).fetchone()[0]
+    assert "synthetic-password-hash" not in saved
+    assert "synthetic-community" not in saved
+    assert saved.count("<masked>") == 3

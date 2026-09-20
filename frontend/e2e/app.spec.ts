@@ -141,3 +141,20 @@ test("Path traceで特定IPを送信し各hopの通信範囲を表示する", as
   await expect(page.getByText("通信範囲: 10.0.1.10/32 → 10.0.9.20/32")).toBeVisible();
   await expect(page.getByText("評価アドレス: 10.0.1.10/32 → 10.0.9.20/32")).toBeVisible();
 });
+
+for (const icmpType of ["0", "8"]) {
+  test(`Path traceでICMP type ${icmpType}を指定できる`, async ({ page }) => {
+    await page.getByRole("button", { name: "Topology / Path" }).click();
+    await page.getByLabel("Protocol").selectOption("icmp");
+    await page.getByLabel("ICMP type", { exact: true }).fill(icmpType);
+    await expect(page.getByLabel("Source port")).toBeDisabled();
+    await expect(page.getByLabel("Port", { exact: true })).toBeDisabled();
+    const request = page.waitForRequest(item => item.url().includes("/api/reachability"));
+    await page.getByRole("button", { name: "経路を解析" }).click();
+    const url = new URL((await request).url());
+    expect(url.searchParams.get("protocol")).toBe("icmp");
+    expect(url.searchParams.get("icmp_type")).toBe(icmpType);
+    expect(url.searchParams.has("port")).toBe(false);
+    expect(url.searchParams.has("source_port")).toBe(false);
+  });
+}

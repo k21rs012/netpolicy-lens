@@ -130,7 +130,7 @@ def evaluate_chain(
             ingress.model_copy(update={"networks": list(packet.source_addresses)}) if packet else ingress,
             egress.model_copy(update={"networks": list(packet.destination_addresses)}) if packet else egress,
         )
-        if coverage == "NONE" or not packet_matches(resolved, protocol, port, source_port):
+        if coverage == "NONE" or not packet_matches(resolved, protocol, port, source_port, packet.icmp_type if packet else None):
             continue
         suffix = "（Segmentの一部に一致）" if coverage == "PARTIAL" else ""
         source_port_unknown = source_port is None and not any(
@@ -141,7 +141,8 @@ def evaluate_chain(
         )
         if (coverage == "PARTIAL" or policy.confidence != Confidence.EXACT
                 or policy.unsupported_matches or source_port_unknown
-                or destination_port_unknown):
+                or destination_port_unknown
+                or (policy.icmp_type is not None and (packet is None or packet.icmp_type is None))):
             result = "PARTIAL"
         elif policy.action == "permit":
             result = "ALLOW"

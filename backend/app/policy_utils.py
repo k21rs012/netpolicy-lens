@@ -34,7 +34,7 @@ def service_labels(policy: Policy) -> list[str]:
             if protocol in ("ip", "any", "*") and port in ("any", "*"):
                 labels.append("ANY")
             elif port in ("any", "*"):
-                labels.append(protocol.upper())
+                labels.append(f"{protocol.upper()}/type:{policy.icmp_type}" if policy.icmp_type is not None else protocol.upper())
             else:
                 labels.append(f"{protocol.upper()}/{port}")
     return list(dict.fromkeys(labels))
@@ -70,8 +70,10 @@ def packet_matches(
     protocol: str,
     port: int | None,
     source_port: int | None = None,
+    icmp_type: int | None = None,
 ) -> bool:
     protocols = {value.lower() for value in policy.protocol}
     protocol_ok = protocol.lower() in protocols or bool(protocols & {"ip", "any", "*"})
     source_ok = source_port is None or port_matches(policy.src_ports, source_port)
-    return protocol_ok and source_ok and port_matches(policy.dst_ports, port)
+    type_ok = policy.icmp_type is None or icmp_type is None or policy.icmp_type == icmp_type
+    return protocol_ok and source_ok and type_ok and port_matches(policy.dst_ports, port)
