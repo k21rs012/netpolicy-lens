@@ -62,3 +62,47 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 .policy-toolbar input{width:86px;height:30px;margin-left:5px;border:0;outline:0;background:transparent;color:var(--ink);font:500 10px 'IBM Plex Mono'}.debug-output{min-width:0;display:flex;flex-direction:column;background:#101915}.debug-output>div{height:50px;padding:7px 12px;border-bottom:1px solid #26352f;display:flex;align-items:center;justify-content:space-between;color:#9bb1a7}.debug-output>div span{display:flex;align-items:center;gap:7px;font-size:9px}.debug-output>div svg{width:14px;color:#5fc99d}.debug-output>div button{height:34px;background:#1d3029;border-color:#355046;color:#d3e3dc;font-size:10px}.debug-output pre{flex:1}.debug-output>pre{min-height:0}
 
 @media(max-width:900px){.debug-output pre{min-height:370px}.policy-toolbar label{flex:1 1 120px}.policy-toolbar input,.policy-toolbar select{width:100%}}
+
+/* Path trace: keep endpoint fields readable and reserve a row for actions. */
+.path-panel .path-controls {
+ display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px 12px;align-items:end;
+}
+.path-panel .path-controls>label {grid-column:span 2;min-width:0;font-size:11px;gap:6px}
+.path-panel .path-controls>.path-endpoint {grid-column:span 6}
+.path-panel .path-controls>label select,.path-panel .path-controls>label input {
+ width:100%;max-width:none;min-width:0;height:38px;font-size:12px;
+}
+.path-panel .path-controls .path-actions {
+ grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:12px;
+ padding-top:12px;border-top:1px solid var(--line);
+}
+.path-panel .path-controls .session-assumption {font-size:11px;white-space:normal}
+.path-panel .path-controls button {
+ flex:none;min-width:156px;height:40px;margin-left:auto;padding:0 16px;white-space:nowrap;
+}
+.path-panel .path-controls button svg {flex:none;width:16px;height:16px}
+.path-panel .path-verdict {flex-wrap:wrap}
+.path-panel .path-verdict>span,.path-panel .path-result>p {overflow-wrap:anywhere;min-width:0}
+.path-panel .hop-list article {grid-template-columns:31px minmax(0,180px) minmax(0,1fr) auto}
+.path-panel .hop-list article>div {min-width:0;overflow-wrap:anywhere}
+.path-panel .hop-reason>small {display:block;margin-top:4px}
+.path-panel .topology-note {align-items:flex-start;line-height:1.6}
+.path-panel .topology-note svg {flex:none;margin-top:2px}
+@media(max-width:1100px) {
+ .path-panel .path-controls {grid-template-columns:repeat(6,minmax(0,1fr))}
+ .path-panel .path-controls>.path-endpoint {grid-column:span 3}
+}
+@media(max-width:900px) {
+ .path-panel .hop-list article {grid-template-columns:31px minmax(0,1fr) auto}
+ .path-panel .hop-reason {grid-column:2/-1;grid-row:2}
+ .path-panel .hop-list article>.status {grid-column:3;grid-row:1}
+}
+@media(max-width:600px) {
+ .path-panel .path-controls {grid-template-columns:repeat(2,minmax(0,1fr));padding:14px}
+ .path-panel .path-controls>label {grid-column:span 1}
+ .path-panel .path-controls>.path-endpoint {grid-column:1/-1}
+ .path-panel .path-controls .path-actions {align-items:stretch;flex-direction:column}
+ .path-panel .path-controls button {width:100%;margin-left:0}
+ .path-panel .path-controls .session-assumption {align-self:flex-start}
+ .path-panel .path-verdict>small {margin-left:0}
+}

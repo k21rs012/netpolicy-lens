@@ -193,7 +193,7 @@ export function TopologyView() {
           <Route />
         </div>
         <div className="path-controls">
-          <label>
+          <label className="path-endpoint">
             Source
             <select value={src} onChange={(e) => setSrc(e.target.value)}>
               {segments.map((n) => (
@@ -203,8 +203,7 @@ export function TopologyView() {
               ))}
             </select>
           </label>
-          <ArrowRight />
-          <label>
+          <label className="path-endpoint">
             Destination
             <select value={dst} onChange={(e) => setDst(e.target.value)}>
               {segments.map((n) => (
@@ -214,11 +213,11 @@ export function TopologyView() {
               ))}
             </select>
           </label>
-          <label>
+          <label className="path-endpoint">
             Source IP
             <input value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} placeholder="省略時はSegment範囲" />
           </label>
-          <label>
+          <label className="path-endpoint">
             Destination IP
             <input value={destinationIp} onChange={(e) => setDestinationIp(e.target.value)} placeholder="省略時はSegment範囲" />
           </label>
@@ -272,19 +271,21 @@ export function TopologyView() {
               <option value="related">related</option>
             </select>
           </label>
-          {state !== "new" && (
-            <label className="session-assumption">
-              <input
-                type="checkbox"
-                checked={assumeSession}
-                onChange={(e) => setAssumeSession(e.target.checked)}
-              />
-              既存セッションを仮定
-            </label>
-          )}
-          <button className="primary" onClick={analyze} disabled={busy}>
-            {busy ? <RefreshCw className="spin" /> : <Route />}経路を解析
-          </button>
+          <div className="path-actions">
+            {state !== "new" && (
+              <label className="session-assumption">
+                <input
+                  type="checkbox"
+                  checked={assumeSession}
+                  onChange={(e) => setAssumeSession(e.target.checked)}
+                />
+                既存セッションを仮定
+              </label>
+            )}
+            <button className="primary" onClick={analyze} disabled={busy}>
+              {busy ? <RefreshCw className="spin" /> : <Route />}経路を解析
+            </button>
+          </div>
         </div>
         {error && (
           <div className="diff-note error">
