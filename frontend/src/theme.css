@@ -1,0 +1,97 @@
+/* Semantic dark palette. Light styles remain the default. */
+:root[data-theme="dark"] {
+  color-scheme:dark;
+  --ink:#e3ece7;
+  --muted:#a5b6ad;
+  --line:#34483e;
+  --green:#72d7a9;
+  --green-soft:#173c2c;
+  --red:#ff9b94;
+  --red-soft:#422623;
+  --amber:#edc779;
+  --amber-soft:#3b321f;
+  --blue:#95c6ef;
+  --dark:#0b120f;
+  --page:#101815;
+  --surface:#18231e;
+  --surface-alt:#1e2d25;
+  --surface-hover:#283c30;
+  color:var(--ink);
+  background:var(--page);
+}
+:root[data-theme="dark"] body {background:var(--page);color:var(--ink)}
+:root[data-theme="dark"] :is(header,.overview>div,.matrix-tools,.matrix-wrap,.drawer,.panel,.device-card,.debug,.empty,.loading,.modal,.diff-controls,.diff-summary article,.diff-section,.topology-summary article,.topology-summary>div,.topology-panel,.path-panel,.matrix-no-results) {background:var(--surface)}
+:root[data-theme="dark"] :is(button,input,select,textarea) {color:var(--ink);background-color:var(--surface);border-color:var(--line)}
+:root[data-theme="dark"] :is(input,textarea)::placeholder {color:#91a49a;opacity:1}
+:root[data-theme="dark"] :is(input,select,textarea) {accent-color:var(--green)}
+:root[data-theme="dark"] select {
+  background-repeat:no-repeat;
+  background-position:right 8px center;
+  background-size:14px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a5b6ad' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+:root[data-theme="dark"] option {color:var(--ink);background:var(--surface)}
+:root[data-theme="dark"] button:hover {border-color:#789585}
+:root[data-theme="dark"] :is(button,input,select,textarea,[role="button"]):focus-visible {outline-color:var(--green)}
+:root[data-theme="dark"] .primary {background:#216e4f;border-color:#398a66;color:#fff}
+:root[data-theme="dark"] .primary:hover {background:#2b805c;border-color:#58ae85}
+:root[data-theme="dark"] .mobile-menu {background:var(--surface);color:var(--ink)}
+:root[data-theme="dark"] .sidebar nav button {background:transparent;color:#a5b6ad}
+:root[data-theme="dark"] .sidebar nav button:hover {background:#182a20;color:#e3ece7}
+:root[data-theme="dark"] .sidebar nav button.active {background:#263e30;color:#fff}
+:root[data-theme="dark"] :is(.matrix thead th,.matrix tbody th,.verdict,.trace-rule code,.data-table th,.data-table td code,.stage.planned,.debug-list,.import-tabs,.paste-card,.detail-tabs,.object-list article>div,.diff-controls label,.section-head>span,.path-controls,.path-verdict,.hop-reason code,.matrix-advanced,.folder-picker,.import-preview>div) {background:var(--surface-alt)}
+:root[data-theme="dark"] :is(.matrix-advanced .search,.matrix-advanced label,.policy-toolbar label,.import-preview .site-input,.paste-guide button,.paste-card-head>input,.issue-list code) {background:var(--surface)}
+:root[data-theme="dark"] :is(.import-tabs button.active,.debug-list button.active) {background:var(--surface-hover);color:var(--ink)}
+:root[data-theme="dark"] :is(header small,.snapshot,.matrix th small,.matrix .corner,.cell small,.status.unknown,.status.same_segment,.status.no_route,.legend .status,.drawer-head small,.drawer-head h2 svg,.verdict p,.trace-rule svg,.trace-rule code,.trace-rule small,.no-trace,.data-table th,.data-table td small,.device-title p,.device-stats span,.device-card footer,.callout p,.stage.planned,.debug-list button small,.loading,.field,.dropzone,.main-footer,.import-tabs button,.paste-guide small,.paste-card>small,.device-drawer .drawer-head p,.device-detail-stats span,.detail-empty,.diff-controls>svg,.diff-controls small,.section-head small,.diff-controls label svg,.diff-summary span,.diff-summary small,.section-head>span,.comm-path small,.delta.removed,.comm-change>code,.diff-none,.path-controls>svg,.path-chain svg,.hop-list small,.no-route,.topology-note,.folder-picker) {color:var(--muted)}
+:root[data-theme="dark"] :is(.overview svg,.search svg,.dash,.diff-summary svg,.comm-path svg,.result-shift>svg,.matrix-no-results>svg) {color:#91a49a}
+:root[data-theme="dark"] :is(.matrix th,.matrix td,.data-table td,.import-preview article) {border-color:var(--line)}
+:root[data-theme="dark"] .trace-rule {border-left-color:var(--line)}
+:root[data-theme="dark"] .cell {background:transparent}
+:root[data-theme="dark"] .cell.allow {background:var(--green-soft)}
+:root[data-theme="dark"] .cell.deny {background:var(--red-soft)}
+:root[data-theme="dark"] .cell.partial {background:var(--amber-soft)}
+:root[data-theme="dark"] .cell.unknown {background:#29332d}
+:root[data-theme="dark"] :is(.cell.same_segment,.filtered-cell,.delta.removed) {background:#202923}
+:root[data-theme="dark"] .filtered-cell {color:#91a49a}
+:root[data-theme="dark"] .cell:hover {outline:1px solid #789585}
+:root[data-theme="dark"] :is(.callout,.paste-guide) {background:var(--green-soft);border-color:#38674d}
+:root[data-theme="dark"] :is(.masked-note,.import-result,.path-chain b) {color:var(--green);border-color:#38674d}
+:root[data-theme="dark"] .path-chain b {background:var(--green-soft)}
+:root[data-theme="dark"] .dropzone {background:var(--surface-alt);border-color:#668574}
+:root[data-theme="dark"] :is(.issue-list article,.diff-note,.import-preview article.needs-confirmation) {background:var(--amber-soft);border-color:#79603a;color:var(--amber)}
+:root[data-theme="dark"] .issue-list small {color:var(--amber)}
+:root[data-theme="dark"] :is(.import-error,.diff-note.error,.risk-banner,.diff-summary article.risk,.comm-change.new-allow) {background:var(--red-soft);border-color:#814740}
+:root[data-theme="dark"] :is(.risk-banner p,.import-result small) {color:var(--red)}
+:root[data-theme="dark"] .delta.deny {color:var(--blue);background:#20364a}
+:root[data-theme="dark"] .vendor {color:var(--blue);background:#20364a}
+:root[data-theme="dark"] :is(.vendor.juniper,.vendor.fortinet) {color:var(--red);background:var(--red-soft)}
+:root[data-theme="dark"] :is(.vendor.yamaha,.vendor.allied) {color:#c4aff0;background:#332944}
+:root[data-theme="dark"] .vendor.aruba {color:#f2b680;background:#3e2e21}
+:root[data-theme="dark"] .vendor.paloalto {color:#8bd3df;background:#193940}
+:root[data-theme="dark"] .vendor.vyos {color:var(--green);background:var(--green-soft)}
+:root[data-theme="dark"] .topology-canvas {background-image:radial-gradient(#385044 1px,transparent 1px)}
+:root[data-theme="dark"] .topology-legend i {background:#91a49a}
+:root[data-theme="dark"] .topology-legend i.inferred {background:transparent}
+:root[data-theme="dark"] .topology-canvas line {stroke:#91a49a}
+:root[data-theme="dark"] .topology-canvas line.adjacent {stroke:var(--green)}
+:root[data-theme="dark"] .topology-canvas line.path-active {stroke:#f5b16c}
+:root[data-theme="dark"] .topology-canvas>svg>g>text {fill:#a8c9b8}
+:root[data-theme="dark"] .topology-node rect {fill:var(--surface-alt);stroke:#668574}
+:root[data-theme="dark"] .topology-node.device rect {fill:#10261a;stroke:#668574}
+:root[data-theme="dark"] .topology-node .node-subtitle {fill:var(--muted)}
+:root[data-theme="dark"] .topology-node.path-active rect {stroke:#f5b16c}
+:root[data-theme="dark"] :is(.shade,.modal-backdrop) {background:#020805b8}
+:root[data-theme="dark"] :is(.debug pre,.paste-card textarea,.object-list pre,.debug-output) {background:#0d1711;color:#c4ded2}
+:root[data-theme="dark"] .debug-output>div button {background:#263e30;color:var(--ink)}
+
+/* Reserve room for the theme switch without squeezing mobile page titles. */
+@media(max-width:600px) {
+  .header-actions {gap:5px}
+  header,.sidebar-collapsed header {height:auto;min-height:78px;flex-wrap:wrap;padding-top:14px;padding-bottom:14px}
+  header>div:first-child {flex:1 1 120px}
+  .header-actions {margin-left:auto}
+}
+:root[data-theme="dark"] .overview>div:nth-child(2) svg {color:var(--green)}
+:root[data-theme="dark"] .overview>div:nth-child(3) svg {color:var(--red)}
+:root[data-theme="dark"] .overview>div:nth-child(4) svg {color:var(--amber)}
+:root[data-theme="dark"] .diff-note.error {color:var(--red)}

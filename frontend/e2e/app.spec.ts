@@ -189,3 +189,95 @@ for (const width of [390, 1280]) {
     await page.screenshot({ path: testInfo.outputPath("nat-flow.png"), animations: "disabled" });
   });
 }
+
+test("テーマはOS設定に追従し、手動切替を保存・別タブへ反映する", async ({ page, context }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.getByRole("switch", { name: "ダークモード" })).toBeChecked();
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(16, 24, 21)");
+  await page.emulateMedia({ colorScheme: "light" });
+  const toggle = page.getByRole("switch", { name: "ダークモード" });
+  await expect(toggle).not.toBeChecked();
+  await toggle.focus();
+  await page.keyboard.press("Space");
+  await expect(toggle).toBeChecked();
+  await page.reload();
+  await expect(toggle).toBeChecked();
+  const other = await context.newPage();
+  await mockApi(other);
+  await other.goto("/");
+  await expect(other.getByRole("switch", { name: "ダークモード" })).toBeChecked();
+  await other.getByRole("switch", { name: "ダークモード" }).click();
+  await expect(toggle).not.toBeChecked();
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 246, 243)");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(toggle).not.toBeChecked();
+  await page.reload();
+  await expect(toggle).not.toBeChecked();
+  await other.close();
+});
+
+test("ダークモードで全ページと詳細・Importを表示する", async ({ page }, testInfo) => {
+  const snapshots = ["after", "before"].map(id => ({ id, name: id, created_at: "2026-09-25T00:00:00Z", parser_version: "1", device_count: 2 }));
+  await page.route("**/api/snapshots", route => route.fulfill({ json: snapshots }));
+  await page.route("**/api/diff?**", route => route.fulfill({ json: {
+    before: snapshots[1], after: snapshots[0],
+    summary: { new_allow: 1, new_deny: 0, removed_allow: 0, added_rules: 1, removed_rules: 0, changed_rules: 0, network_changes: 0 },
+    communications: [{ source: "core-user", destination: "fw-server", source_label: "USER", destination_label: "SERVER", source_device: "core", destination_device: "fw", before_result: "DENY", after_result: "ALLOW", new_allow: ["TCP/443"], new_deny: [], removed_allow: [], removed_deny: [], after_traces: [] }],
+    policies: [], network: [],
+  } }));
+  await page.reload();
+  await page.getByRole("switch", { name: "ダークモード" }).click();
+  await expect(page.locator(".matrix-tools select")).toHaveCSS("background-repeat", "no-repeat");
+  await expect(page.locator(".matrix-wrap")).toHaveCSS("background-color", "rgb(24, 35, 30)");
+  await expect(page.locator(".cell.allow").first()).toHaveCSS("background-color", "rgb(23, 60, 44)");
+  await page.screenshot({ path: testInfo.outputPath("dark-matrix.png"), animations: "disabled" });
+  await page.locator('button[title^="USER (core) → SERVER"]').click();
+  await expect(page.locator(".drawer")).toHaveCSS("background-color", "rgb(24, 35, 30)");
+  await page.screenshot({ path: testInfo.outputPath("dark-detail.png"), animations: "disabled" });
+  await page.getByRole("button", { name: "詳細を閉じる" }).click();
+  for (const [name, selector] of [
+    ["Topology / Path", ".path-panel"], ["Snapshot Diff", ".diff-page"],
+    ["ポリシー", ".panel"], ["デバイス", ".cards"], ["Parser Debug", ".debug"], ["対応状況", ".panel"],
+  ]) {
+    await page.getByRole("button", { name, exact: name !== "Parser Debug" }).click();
+    await expect(page.locator(selector)).toBeVisible();
+    await expect(page.getByRole("switch", { name: "ダークモード" })).toBeChecked();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`dark-${name.replaceAll("/", "-")}.png`), animations: "disabled" });
+  }
+  await page.getByRole("button", { name: "Config Import" }).click();
+  await expect(page.getByRole("dialog")).toHaveCSS("background-color", "rgb(24, 35, 30)");
+  await page.getByRole("tab", { name: "機器ごとに貼り付け" }).click();
+  await page.getByLabel("機器 1 のconfig").fill("hostname example\ninterface eth0");
+  await page.screenshot({ path: testInfo.outputPath("dark-import.png"), animations: "disabled" });
+});
+
+for (const width of [320, 390]) {
+  test(`モバイルでテーマ切替とダーク表示が収まる（${width}px）`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.evaluate(() => localStorage.removeItem("netpolicy-sidebar-collapsed"));
+    await page.reload();
+    const toggle = page.getByRole("switch", { name: "ダークモード" });
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const title = await page.locator("h1").boundingBox();
+    const actions = await page.locator(".header-actions").boundingBox();
+    expect(title!.x + title!.width <= actions!.x || title!.y + title!.height <= actions!.y).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("dark-mobile.png"), animations: "disabled" });
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await page.screenshot({ path: testInfo.outputPath("light-mobile.png"), animations: "disabled" });
+  });
+}
+
+test("保存領域が使えなくてもテーマを切り替えられる", async ({ page }) => {
+  await page.addInitScript(() => {
+    Storage.prototype.getItem = () => { throw new DOMException("blocked", "SecurityError"); };
+    Storage.prototype.setItem = () => { throw new DOMException("blocked", "SecurityError"); };
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "ポリシーマトリクス" })).toBeVisible();
+  await page.getByRole("switch", { name: "ダークモード" }).click();
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(16, 24, 21)");
+});

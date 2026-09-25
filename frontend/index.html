@@ -1,1 +1,25 @@
-<!doctype html><html lang="ja"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#091210"/><title>NetPolicy Lens</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f6f3" />
+    <script>
+      // Apply before rendering to avoid a light flash when dark mode is saved.
+      (() => {
+        let saved;
+        try { saved = localStorage.getItem("netpolicy-theme"); } catch {}
+        const theme = saved === "light" || saved === "dark" ? saved
+          : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+        document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#101815" : "#f4f6f3";
+      })();
+    </script>
+    <title>NetPolicy Lens</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

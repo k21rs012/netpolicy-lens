@@ -11,6 +11,8 @@ import {
   GitCompareArrows,
   LayoutGrid,
   Menu,
+  Moon,
+  Sun,
   Network,
   Plus,
   RefreshCw,
@@ -21,6 +23,7 @@ import {
 } from "lucide-react";
 import { ImportDialog } from "./components/ImportDialog";
 import { Detail, Empty, Matrix } from "./components/Matrix";
+import { useTheme } from "./hooks/useTheme";
 import { useAppData } from "./hooks/useAppData";
 import { Devices, DeviceDetailDrawer } from "./pages/Devices";
 import { Capabilities, Debug } from "./pages/Diagnostics";
@@ -40,9 +43,11 @@ const nav = [
 ] as const;
 
 export default function App() {
+  const { theme, toggleTheme } = useTheme();
   const [page, setPage] = useState("matrix");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    const saved = localStorage.getItem("netpolicy-sidebar-collapsed");
+    let saved = null;
+    try { saved = localStorage.getItem("netpolicy-sidebar-collapsed"); } catch {}
     return saved === null
       ? window.matchMedia("(max-width: 900px)").matches
       : saved === "1";
@@ -55,10 +60,9 @@ export default function App() {
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [dialog, setDialog] = useState(false);
   useEffect(() => {
-    localStorage.setItem(
-      "netpolicy-sidebar-collapsed",
-      sidebarCollapsed ? "1" : "0",
-    );
+    try {
+      localStorage.setItem("netpolicy-sidebar-collapsed", sidebarCollapsed ? "1" : "0");
+    } catch {}
   }, [sidebarCollapsed]);
   const title = nav.find((n) => n[0] === page)?.[1];
   const stats = useMemo(
@@ -122,6 +126,11 @@ export default function App() {
             <h1>{title}</h1>
           </div>
           <div className="header-actions">
+            <button className="icon" role="switch" aria-checked={theme === "dark"}
+              aria-label="ダークモード" title={theme === "dark" ? "ライトモードに切り替え" : "ダークモードに切り替え"}
+              onClick={toggleTheme}>
+              {theme === "dark" ? <Sun /> : <Moon />}
+            </button>
             <button
               onClick={() => refresh()}
               className="icon"

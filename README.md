@@ -51,6 +51,7 @@ docker compose up -d --build
 - `ALLOW` / `DENY` / `PARTIAL` / `UNKNOWN` / `SAME_SEGMENT` Matrix
 - Path traceは元・現在の通信アドレス範囲、protocol、送信元/宛先port、IP family、stateを保持し、各hopのinterface/zoneとは分離してPolicyを評価します。Source IP / Destination IPは任意で指定でき、省略時は選択Segmentの範囲を評価します。指定IPは選択Segment内・同一familyに限ります。APIの追加引数は`source_ip` / `destination_ip`、結果と各stepの`flow.original` / `flow.current`に通信情報を返します。
 - 対応するNATは宛先変換→経路検索→Policy評価→送信元変換の順に適用し、変換後の通信情報を次の機器へ渡します。NATがある経路で宛先範囲が経路条件をまたぐ場合やECMPがある場合はPARTIALとし、1経路の結果を全体の保証にはしません。詳細は下記「NATを含むPath trace」を参照してください。
+- ヘッダーの月／太陽アイコンでライト・ダークモードを切り替えられます。初回はOS設定に追従し、手動選択はブラウザへ保存して再読み込み後や別タブにも反映します。
 - Matrixセル詳細とRule trace
 - Device / Policy / Parser Debug / Capability画面
 - Device詳細（Interface、VLAN、Zone、Route、Policy、NAT、Warning、Unsupported）
