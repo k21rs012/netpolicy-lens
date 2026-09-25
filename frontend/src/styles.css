@@ -159,3 +159,26 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 .trace-rule {grid-column:1/-1;margin-top:0;min-width:0}
 .trace-rule>div {min-width:0;overflow-wrap:anywhere}
 .trace-rule>svg {flex-shrink:0}
+
+
+/* Keep navigation controls in the header, not floating across its boundary. */
+.app>main>.app-header {position:sticky;top:0;z-index:30;flex:none;padding:0 28px;gap:20px}
+.app-header .header-leading {display:flex;flex-direction:row;align-items:center;gap:14px;min-width:0}
+.app-header .header-title {display:flex;flex-direction:column;min-width:0}
+.app-header .header-title h1 {overflow-wrap:anywhere}
+.app-header .sidebar-toggle {position:static;flex:none;box-shadow:none;border-radius:7px}
+@media(max-width:900px) {
+ .app {--mobile-header-height:78px}
+ .app>main>.app-header {position:sticky;z-index:30;height:var(--mobile-header-height);padding:0 16px;gap:12px;flex-wrap:nowrap}
+ .sidebar {top:var(--mobile-header-height)}
+ .app-header .header-leading {gap:12px}
+}
+@media(max-width:600px) {
+ .app {--mobile-header-height:112px}
+ .app>main>.app-header {display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:38px 38px;gap:8px;padding:14px 16px}
+ .app-header .header-leading {width:100%;min-width:0}
+ .app-header .header-title h1 {font-size:18px;line-height:1.25;margin:0}
+ .app-header .header-actions {justify-self:end;margin:0;gap:5px}
+}
+
+.sidebar {overflow-y:auto}

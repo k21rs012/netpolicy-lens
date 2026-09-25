@@ -281,3 +281,37 @@ test("保存領域が使えなくてもテーマを切り替えられる", async
   await page.getByRole("switch", { name: "ダークモード" }).click();
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(16, 24, 21)");
 });
+
+for (const width of [390, 1280]) {
+  test(`サイドバー開閉ボタンがヘッダー内に収まり操作できる（${width}px）`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.evaluate(() => localStorage.removeItem("netpolicy-sidebar-collapsed"));
+    await page.reload();
+    const toggle = page.locator(".sidebar-toggle");
+    for (let i = 0; i < 3; i++) {
+      await expect(toggle).toBeVisible();
+      const header = await page.locator(".app-header").boundingBox();
+      const button = await toggle.boundingBox();
+      expect(button!.x).toBeGreaterThanOrEqual(header!.x);
+      expect(button!.y).toBeGreaterThanOrEqual(header!.y);
+      expect(button!.x + button!.width).toBeLessThanOrEqual(header!.x + header!.width);
+      expect(button!.y + button!.height).toBeLessThanOrEqual(header!.y + header!.height);
+      expect(await toggle.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+      })).toBe(true);
+      const expanded = await toggle.getAttribute("aria-expanded");
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", expanded === "true" ? "false" : "true");
+    }
+    if (width < 900) {
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const header = await page.locator(".app-header").boundingBox();
+      const sidebar = await page.locator(".sidebar").boundingBox();
+      expect(sidebar!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
+    }
+    await page.screenshot({ path: testInfo.outputPath("sidebar-control.png"), animations: "disabled" });
+    await page.getByRole("switch", { name: "ダークモード" }).click();
+    await page.screenshot({ path: testInfo.outputPath("sidebar-control-dark.png"), animations: "disabled" });
+  });
+}

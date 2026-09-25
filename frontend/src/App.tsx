@@ -75,7 +75,7 @@ export default function App() {
   );
   return (
     <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className="sidebar">
+      <aside className="sidebar" id="main-sidebar">
         <div className="brand">
           <div>
             <Network />
@@ -112,18 +112,22 @@ export default function App() {
         </div>
       </aside>
       <main>
-        <header>
-          <div>
+        <header className="app-header">
+          <div className="header-leading">
             <button
-              className="mobile-menu"
+              className="sidebar-toggle icon"
+              aria-controls="main-sidebar"
+              aria-expanded={!sidebarCollapsed}
               aria-label={sidebarCollapsed ? "メニューを開く" : "メニューを畳む"}
               title={sidebarCollapsed ? "メニューを開く" : "メニューを畳む"}
               onClick={() => setSidebarCollapsed((value) => !value)}
             >
               <Menu />
             </button>
-            <small>NETWORK ANALYSIS</small>
-            <h1>{title}</h1>
+            <div className="header-title">
+              <small>NETWORK ANALYSIS</small>
+              <h1>{title}</h1>
+            </div>
           </div>
           <div className="header-actions">
             <button className="icon" role="switch" aria-checked={theme === "dark"}

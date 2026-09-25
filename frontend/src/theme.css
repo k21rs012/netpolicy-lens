@@ -35,7 +35,7 @@
 :root[data-theme="dark"] :is(button,input,select,textarea,[role="button"]):focus-visible {outline-color:var(--green)}
 :root[data-theme="dark"] .primary {background:#216e4f;border-color:#398a66;color:#fff}
 :root[data-theme="dark"] .primary:hover {background:#2b805c;border-color:#58ae85}
-:root[data-theme="dark"] .mobile-menu {background:var(--surface);color:var(--ink)}
+:root[data-theme="dark"] .sidebar-toggle {background:var(--surface);color:var(--ink)}
 :root[data-theme="dark"] .sidebar nav button {background:transparent;color:#a5b6ad}
 :root[data-theme="dark"] .sidebar nav button:hover {background:#182a20;color:#e3ece7}
 :root[data-theme="dark"] .sidebar nav button.active {background:#263e30;color:#fff}
@@ -84,13 +84,6 @@
 :root[data-theme="dark"] :is(.debug pre,.paste-card textarea,.object-list pre,.debug-output) {background:#0d1711;color:#c4ded2}
 :root[data-theme="dark"] .debug-output>div button {background:#263e30;color:var(--ink)}
 
-/* Reserve room for the theme switch without squeezing mobile page titles. */
-@media(max-width:600px) {
-  .header-actions {gap:5px}
-  header,.sidebar-collapsed header {height:auto;min-height:78px;flex-wrap:wrap;padding-top:14px;padding-bottom:14px}
-  header>div:first-child {flex:1 1 120px}
-  .header-actions {margin-left:auto}
-}
 :root[data-theme="dark"] .overview>div:nth-child(2) svg {color:var(--green)}
 :root[data-theme="dark"] .overview>div:nth-child(3) svg {color:var(--red)}
 :root[data-theme="dark"] .overview>div:nth-child(4) svg {color:var(--amber)}
