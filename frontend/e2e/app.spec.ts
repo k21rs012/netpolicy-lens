@@ -290,12 +290,13 @@ for (const width of [390, 1280]) {
     const toggle = page.locator(".sidebar-toggle");
     for (let i = 0; i < 3; i++) {
       await expect(toggle).toBeVisible();
-      const header = await page.locator(".app-header").boundingBox();
-      const button = await toggle.boundingBox();
-      expect(button!.x).toBeGreaterThanOrEqual(header!.x);
-      expect(button!.y).toBeGreaterThanOrEqual(header!.y);
-      expect(button!.x + button!.width).toBeLessThanOrEqual(header!.x + header!.width);
-      expect(button!.y + button!.height).toBeLessThanOrEqual(header!.y + header!.height);
+      // Read both rectangles in the same frame while the main panel animates.
+      await expect.poll(() => toggle.evaluate(el => {
+        const header = el.closest("header")!.getBoundingClientRect();
+        const button = el.getBoundingClientRect();
+        return button.left >= header.left && button.top >= header.top
+          && button.right <= header.right && button.bottom <= header.bottom;
+      })).toBe(true);
       expect(await toggle.evaluate(el => {
         const rect = el.getBoundingClientRect();
         return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
