@@ -108,7 +108,7 @@ def test_explicit_destination_ip_selects_host_route():
     assert trace(configs, destination_ip="10.0.9.21")["result"] == "ALLOW"
 
 
-def test_nat_candidate_uses_remote_addresses_but_local_interfaces():
+def test_nat_translation_reaches_next_hop_with_local_interface_binding():
     from app.models import NATRule
 
     configs = network_path()
@@ -118,7 +118,8 @@ def test_nat_candidate_uses_remote_addresses_but_local_interfaces():
                               translated_src="203.0.113.1")]
     result = trace(configs)
     assert result["steps"][1]["nat"][0]["name"] == "remote-source"
-    assert result["steps"][2]["flow"]["current"] == result["flow"]["original"]
+    assert result["steps"][2]["flow"]["current"]["source_addresses"] == ["203.0.113.1/32"]
+    assert result["result"] == "DENY"
 
 
 def test_api_returns_flow_and_validates_ip_inputs(tmp_path, monkeypatch):

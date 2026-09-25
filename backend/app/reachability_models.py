@@ -50,6 +50,10 @@ class NatEffect(BaseModel):
     translated_src: str | None = None
     translated_dst: str | None = None
     translated_port: int | None = None
+    stage: Literal["source", "destination"] | None = None
+    applied: bool = False
+    before: Packet | None = None
+    after: Packet | None = None
     evaluation_order: str | None = None
     confidence: Literal["EXACT", "PARTIAL"] = "EXACT"
     note: str | None = None
@@ -96,6 +100,8 @@ class HopResult(BaseModel):
     route: str | None = None
     nat: list[NatEffect] = Field(default_factory=list)
     flow: FlowState | None = None
+    packet_in: Packet | None = None
+    packet_out: Packet | None = None
 
 
 class ReachabilityResult(BaseModel):

@@ -144,6 +144,11 @@ class NATRule(BaseModel):
     out_interfaces: list[str] = Field(default_factory=list)
     disabled: bool = False
     ip_version: Literal[4, 6] | None = None
+    stage: Literal["source", "destination"] | None = None
+    unsupported_matches: list[str] = Field(default_factory=list)
+    semantics_version: int = 0
+    dynamic_port: bool = False
+    policy_id: str | None = None
     trace: Trace | None = None
 
 

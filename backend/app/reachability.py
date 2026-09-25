@@ -44,7 +44,8 @@ def analyze_reachability(
     route_destination = segment_map[destination].model_copy(
         update={"networks": list(flow.current.destination_addresses)}
     )
-    if source == destination:
+    has_nat = any(not r.disabled for c in configs for r in c.nat)
+    if source == destination and not has_nat:
         return _result(**base, result="SAME_SEGMENT", path=[segment_node(source)])
 
     families = {ipaddress.ip_network(value).version for value in (
@@ -52,6 +53,11 @@ def analyze_reachability(
     )}
     if ip_version is None and len(families) > 1:
         return _result(**base, result="UNKNOWN", route_reason="複数のIP familyがあります。ip_versionを指定してください")
+
+    if has_nat:
+        from .nat_path import trace_nat_path
+        traced = trace_nat_path(configs, source, destination, flow, topology, assume_session)
+        return _result(**{**base, **traced})
 
     graph: dict[str, list[str]] = {node.id: [] for node in topology.nodes}
     for edge in topology.edges:

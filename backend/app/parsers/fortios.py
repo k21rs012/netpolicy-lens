@@ -273,9 +273,11 @@ class FortiOSParser(BaseConfigParser):
                     config="\n".join(block.raw_lines), reason=f"unresolved policy reference: {reference}", parser=self.parser_id))
             if (block.values.get("nat") or ["disable"])[0] == "enable":
                 nat_rules.append(NATRule(device=device_id, name=f"policy-{block.name}-snat", type="source",
-                    original_src=policy.src[0], original_dst=policy.dst[0], translated_src="interface-address",
-                    protocol=protocols[0], sequence=order,
-                    destination_ports=ports if ports != ["any"] else [],
+                    original_src="any", original_dst="any", translated_src="interface-address",
+                    policy_id=policy.id, dynamic_port=(block.values.get("fixedport") or ["disable"])[0] != "enable",
+                    disabled=not policy.enabled,
+                    unsupported_matches=["FortiOS IP pool"] if (block.values.get("ippool") or ["disable"])[0] == "enable" else [],
+                    protocol="any", sequence=order,
                     in_interfaces=source_names, out_interfaces=destination_names,
                     trace=self._block_trace(block)))
 
@@ -289,6 +291,8 @@ class FortiOSParser(BaseConfigParser):
                 vrf=(block.values.get("vrf") or [None])[0],
                 metric=int(block.values["distance"][0]) if block.values.get("distance") and block.values["distance"][0].isdigit() else None,
                 trace=self._block_trace(block)))
+        for nat_rule in nat_rules:
+            nat_rule.semantics_version = 1
         return CanonicalConfig(device=device, interfaces=interfaces, vlans=vlans, segments=segments, zones=zones,
             routes=routes, policies=policies, nat=nat_rules, address_objects=address_objects,
             service_objects=service_objects, warnings=warnings, unsupported=unsupported)

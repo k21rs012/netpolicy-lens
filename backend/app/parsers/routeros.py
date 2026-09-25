@@ -86,9 +86,18 @@ class MikroTikRouterOSParser(BaseConfigParser):
             elif section == "/ip firewall nat" and line.startswith("add "):
                 action = values.get("action", "nat")
                 nat.append(NATRule(device=device.id, name=values.get("comment", f"nat-{number}"),
-                    type="destination" if values.get("chain") == "dstnat" else "source",
+                    type="exclude" if action == "accept" else "destination" if values.get("chain") == "dstnat" else "source",
+                    stage="destination" if values.get("chain") == "dstnat" else "source",
+                    dynamic_port=action in {"src-nat", "masquerade"},
+                    translated_port=int(values["to-ports"]) if values.get("to-ports", "").isdigit() else None,
+                    unsupported_matches=[
+                        *[key for key in values if key not in {"chain", "action", "src-address", "dst-address", "to-addresses", "to-ports", "protocol", "src-port", "dst-port", "in-interface", "out-interface", "in-interface-list", "out-interface-list", "disabled", "comment", "log", "log-prefix"}],
+                        *(["unsupported NAT action/chain"] if action not in {"accept", "src-nat", "dst-nat", "masquerade"} or values.get("chain") not in {"srcnat", "dstnat"} else []),
+                        *(["unsupported NAT port range"] if values.get("to-ports") and not values["to-ports"].isdigit() else []),
+                        *[f"unresolved {key}" for key in ("in-interface-list", "out-interface-list") if values.get(key) and values[key] not in interface_lists],
+                    ],
                     original_src=values.get("src-address", "any"), original_dst=values.get("dst-address", "any"),
-                    translated_src=values.get("to-addresses") if values.get("chain") != "dstnat" else None,
+                    translated_src=("masquerade" if action == "masquerade" else values.get("to-addresses")) if values.get("chain") != "dstnat" else None,
                     translated_dst=values.get("to-addresses") if values.get("chain") == "dstnat" else None,
                     protocol=values.get("protocol", "any"), sequence=number,
                     source_ports=[values["src-port"]] if values.get("src-port") else [],
@@ -138,5 +147,7 @@ class MikroTikRouterOSParser(BaseConfigParser):
             if interface.vlan_id in vlans:
                 vlans[interface.vlan_id].subnets = interface_networks(interface.addresses)
         objects = [AddressObject(device=device.id, name=name, values=values) for name, values in address_values.items()]
+        for nat_rule in nat:
+            nat_rule.semantics_version = 1
         return CanonicalConfig(device=device, interfaces=list(interfaces.values()), vlans=list(vlans.values()),
             segments=segments, routes=routes, policies=policies, nat=nat, address_objects=objects)

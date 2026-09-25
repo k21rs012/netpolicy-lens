@@ -139,6 +139,7 @@ class VyOSParser(BaseConfigParser):
         address_groups: dict[str, list[str]] = defaultdict(list)
         port_groups: dict[str, list[str]] = defaultdict(list)
         interface_groups: dict[str, list[str]] = defaultdict(list)
+        nat_unknown: dict[tuple[str, int], list[str]] = defaultdict(list)
         nat_data: dict[tuple[str, int], dict[str, str]] = defaultdict(dict)
         nat_lines: dict[tuple[str, int], list[tuple[int, str]]] = defaultdict(list)
         routes: dict[tuple[str | None, str], Route] = {}
@@ -316,6 +317,7 @@ class VyOSParser(BaseConfigParser):
                 if not rest:
                     continue
                 key = kind, sequence
+                nat_data.setdefault(key, {})
                 nat_lines[key].append((number, raw))
                 if rest in {"disable", "exclude"}:
                     nat_data[key][rest] = "true"
@@ -325,6 +327,8 @@ class VyOSParser(BaseConfigParser):
                 ):
                     nat_data[key][field.group(1)] = _unquote(field.group(2))
                     continue
+
+                nat_unknown[key].append(rest)
 
             if not structural:
                 warnings.append(ParserWarning(device=device_id, line=number, config=line,
@@ -499,7 +503,12 @@ class VyOSParser(BaseConfigParser):
             address_hint = " ".join(filter(None, (data.get("source address"), data.get("destination address"))))
             nat_rules.append(NATRule(
                 device=device_id, name=f"{kind}-{sequence}",
-                type="exclude" if data.get("exclude") else kind,
+                type="exclude" if data.get("exclude") else kind, stage=kind,
+                dynamic_port=kind == "source",
+                unsupported_matches=[*nat_unknown[(kind, sequence)],
+                    *([f"unresolved interface-group {inbound_group}"] if inbound_group and inbound_group not in interface_groups else []),
+                    *([f"unresolved interface-group {outbound_group}"] if outbound_group and outbound_group not in interface_groups else []),
+                    *(["unsupported translation port range"] if data.get("translation port") and not data["translation port"].isdigit() else [])],
                 original_src=data.get("source address", "any"),
                 original_dst=data.get("destination address", "any"),
                 translated_src=translation if kind == "source" else None,
@@ -519,6 +528,8 @@ class VyOSParser(BaseConfigParser):
                            for name, values in address_groups.items()]
         service_objects = [ServiceObject(device=device_id, name=name, protocol="tcp_udp", ports=values)
                            for name, values in port_groups.items()]
+        for nat_rule in nat_rules:
+            nat_rule.semantics_version = 1
         return CanonicalConfig(
             device=device, interfaces=list(interfaces.values()), vlans=vlans,
             segments=segments, zones=zones, routes=list(routes.values()),
