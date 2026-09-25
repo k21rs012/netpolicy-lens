@@ -316,3 +316,26 @@ set security nat source rule-set OUT rule SNAT then source-nat pool PUB
     assert config.nat[0].stage == "destination"
     assert config.nat[0].type == "exclude"
     assert config.nat[1].unsupported_matches
+
+
+@pytest.mark.parametrize("parser_id,raw", [
+    ("vyos", "set system host-name edge\nset nat destination rule 10 load-balance hash random"),
+    ("juniper_srx", "set system host-name edge\nset security nat destination rule-set IN rule UNKNOWN match source-address-name MISSING"),
+])
+def test_unsupported_only_nat_rules_are_not_dropped(parser_id, raw):
+    config, _ = ParserRegistry.parse(raw, "synthetic.conf", parser_id=parser_id)
+    assert len(config.nat) == 1
+    assert config.nat[0].unsupported_matches
+
+
+def test_srx_multiple_match_addresses_do_not_hide_an_uncertain_candidate():
+    raw = """set system host-name edge
+set security nat destination rule-set IN rule WEB match destination-address 203.0.113.10
+set security nat destination rule-set IN rule WEB match destination-address 203.0.113.20
+set security nat destination rule-set IN rule WEB then destination-nat pool PRIVATE
+set security nat destination pool PRIVATE address 10.0.9.20
+"""
+    config, _ = ParserRegistry.parse(raw, "synthetic.conf", parser_id="juniper_srx")
+    packet = Packet(source_addresses=("10.0.1.10/32",), destination_addresses=("203.0.113.10/32",), protocol="tcp", ip_version=4)
+    ingress = network_path(2)[0].segments[0]
+    assert apply_nat_stage(config, packet, ingress, None, "destination").blocked

@@ -257,7 +257,7 @@ class JunosBaseParser(BaseConfigParser):
                 destination_ports=[original_port] if original_port else [],
                 trace=self.trace(int(data.get("line", 0)), str(data.get("raw", ""))) if data.get("line") else None))
         from .nat_safety import scope_junos_nat
-        scope_junos_nat(self.lines, nat_rules)
+        scope_junos_nat(self.lines, nat_rules, device_id)
         for nat_rule in nat_rules:
             nat_rule.semantics_version = 1
         return CanonicalConfig(device=device, interfaces=list(ifaces.values()), vlans=vlans, segments=segments,

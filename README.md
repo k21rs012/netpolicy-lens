@@ -50,7 +50,7 @@ docker compose up -d --build
 - Canonical Modelとraw config / line trace
 - `ALLOW` / `DENY` / `PARTIAL` / `UNKNOWN` / `SAME_SEGMENT` Matrix
 - Path traceは元・現在の通信アドレス範囲、protocol、送信元/宛先port、IP family、stateを保持し、各hopのinterface/zoneとは分離してPolicyを評価します。Source IP / Destination IPは任意で指定でき、省略時は選択Segmentの範囲を評価します。指定IPは選択Segment内・同一familyに限ります。APIの追加引数は`source_ip` / `destination_ip`、結果と各stepの`flow.original` / `flow.current`に通信情報を返します。
-- NAT候補の条件評価にも通信アドレスを使用しますが、NAT変換はまだ適用しません。この段階では`flow.original`と`flow.current`は同じです。Segment範囲に対する経路探索は既存の代表アドレス方式、複数経路は1経路選択のままで、全範囲・全経路の保証は未対応です。
+- 対応するNATは宛先変換→経路検索→Policy評価→送信元変換の順に適用し、変換後の通信情報を次の機器へ渡します。NATがある経路で宛先範囲が経路条件をまたぐ場合やECMPがある場合はPARTIALとし、1経路の結果を全体の保証にはしません。詳細は下記「NATを含むPath trace」を参照してください。
 - Matrixセル詳細とRule trace
 - Device / Policy / Parser Debug / Capability画面
 - Device詳細（Interface、VLAN、Zone、Route、Policy、NAT、Warning、Unsupported）
@@ -162,7 +162,7 @@ npm run test:e2e
 - 実機接続、Config Push、自動修正は行いません。
 - configは外部サービスへ送信しません。
 - Topologyの機器間リンクは設定内サブネットの重複から推定し、物理配線を保証しません。
-- Path Traceはconnected/static routeの最長一致、recursive next-hop、ECMP、blackhole/reject、IPv6 scoped next-hop、VRF、ACL/zone/global chain、指定したconnection stateとIP familyを評価します。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
+- Path Traceはconnected/static routeの最長一致、recursive next-hop、blackhole/reject、IPv6 scoped next-hop、VRF、ACL/zone/global chain、指定したconnection stateとIP familyを評価します。ECMPの全経路集約は未対応です。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
 - 一致したNAT ruleと変換値、評価順、条件評価の確度はPath Traceに表示します。Rule順序、Interface、IP family、Protocol、Source/Destination Portを評価しますが、実セッションテーブルや時刻・ユーザー・URL categoryなどconfig外のランタイム条件は再現しません。`established` / `related` は実セッションの存在を確認できないため通常は `UNKNOWN` とし、画面で「既存セッションを仮定」を明示した場合だけstateful sessionとして評価します。
 - 未解決オブジェクトや適用関係が曖昧な場合は `UNKNOWN` を優先します。
 - Password / Secret / SNMP CommunityはSnapshot保存前とJSON Export時にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
@@ -180,3 +180,15 @@ Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。
 - Matrixはセグメント全体・全サービスの概要です。DNS、DHCP、ICMP typeなどの例外と拒否が混在すればPARTIALになります。特定通信はPath traceでIP・port・ICMP typeを指定してください。
 - 未定義access-map/ACL、未対応map条件、port/global/QoSフィルターとの併用は警告とPARTIALで扱います。VLAN ACLが適用されていない方向、同一VLAN内のL2経路、管理プレーンのアクセス制御は今回の判定対象外です。既存Snapshotにはconfigの再importが必要です。
 - 検証根拠：[x540L 5.5.5公式リファレンス：ハードウェアパケットフィルター](https://www.allied-telesis.co.jp/support/list/awp/rel/5.5.5-2.1/613-003277_L/docs/overview-30.html)。実機の稼働状態・OSバージョン固有の差異は別途確認が必要です。
+
+
+### NATを含むPath trace
+
+- **入力はNAT前**の送信元・宛先です。公開VIPを含むSegmentをDestinationに選び、そのVIPをDestination IPに指定します。DNAT後は実際の宛先ネットワークまで探索するため、表示する到達Segmentは選択したSegmentと異なる場合があります。
+- 対応する処理順: VyOS / RouterOSのDNAT→routing→forward policy→SNAT、SRXのstatic/destination NAT→routing→policy→reverse static/source NAT、FortiOSの選択されたPolicyに付随するSNAT。
+- 単一IP・portへの変換、NAT除外、順序・interface・protocol・port条件、SRXの同じprefix長のstatic NATと逆方向マッピングを扱います。DNATとSNATを別ルールで併用した通信にも対応します。SNATはローカルPolicy評価後に適用します。
+- `flow.original`は入力を保持します。結果の`flow.current`は最終通信、各hopの`flow.current`はPolicy評価時の通信です。各hopの`packet_in` / `packet_out`、NAT効果の`before` / `after` / `applied`に受信・転送・実適用の根拠を返します。Policyで拒否した通信にSNATは適用しません。
+- 複数pool・範囲割り当て、未解決object、部分一致、未対応条件はPARTIALで停止し、後続の許可ルールへ落としません。動的PATは送信元portを未確定（null）として伝搬し、全体をPARTIALとします。DHCP等で外側interfaceのIPが不明なmasqueradeも断定しません。
+- **未対応**: PAN-OS、Cisco IOS/ASA/FTD、YamahaのNAT処理順、FortiOS VIP/central NAT/IP pool、単一ルールでのtwice NAT、複数SRX rule-setの優先関係、条件付きstatic NAT逆変換、NAT64、poolごとの候補分岐、実セッションに基づく戻り通信。NAT処理順が未対応の機器は、NATルールがある経路をPARTIALとします。
+- 既存Snapshotの旧NATモデルは再取り込みが必要です。旧モデルから失われた条件を推測して実行しません。Matrixは従来の静的概要であり、このNATパイプラインはPath traceに適用されます。
+- 処理順の根拠: [VyOS NAT44](https://docs.vyos.io/en/1.4/configuration/nat/nat44.html)、[SRX NAT overview](https://www.juniper.net/documentation/us/en/software/junos/nat/topics/topic-map/security-nat-overview.html)、[RouterOS packet flow](https://help.mikrotik.com/docs/spaces/ROS/pages/328227/Packet%2BFlow%2Bin%2BRouterOS)、[FortiOS fixed port](https://docs.fortinet.com/document/fortigate/6.2.1/technical-note-fixed-port-on-firewall-policy/12/fd40732)。[PAN-OSはPolicyにNAT前アドレス・NAT後zoneを用いる](https://docs.paloaltonetworks.com/ngfw/networking/nat/nat-policy-rules)ため、他OSの処理順を流用しません。

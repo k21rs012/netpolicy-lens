@@ -4,10 +4,10 @@ from __future__ import annotations
 import ipaddress
 from collections import deque
 
-from .models import Segment
+from .models import CanonicalConfig, Segment
 from .nat_pipeline import apply_nat_stage
 from .policy_engine import evaluate_device
-from .reachability_models import FlowState, HopResult
+from .reachability_models import FlowState, HopResult, TopologyData
 from .routing import routed_egress
 from .topology_graph import segment_node
 
@@ -18,7 +18,8 @@ def _contains(segment: Segment, addresses: tuple[str, ...]) -> bool:
                                       and ipaddress.ip_network(v).subnet_of(n) for n in networks) for v in addresses)
 
 
-def trace_nat_path(configs, source, destination, flow, topology, assume_session):
+def trace_nat_path(configs: list[CanonicalConfig], source: str, destination: str,
+                   flow: FlowState, topology: TopologyData, assume_session: bool) -> dict:
     """Still selects one route; uncertainty is never replaced by a later ALLOW."""
     segments = {s.id: s for c in configs for s in c.segments}
     devices = {c.device.id: c for c in configs}

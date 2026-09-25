@@ -6,8 +6,14 @@ import {
 
 import { api } from "../api";
 import { Status } from "../components/Status";
-import type { ReachabilityData, TopologyData, TopologyNode } from "../types";
+import type { Packet, ReachabilityData, TopologyData, TopologyNode } from "../types";
 
+
+function packetSummary(packet: Packet) {
+  const endpoint = (addresses: string[], port: number | null) =>
+    `${addresses.join(", ") || "不明"}${port != null ? ` (port ${port})` : ""}`;
+  return `${endpoint(packet.source_addresses, packet.source_port)} → ${endpoint(packet.destination_addresses, packet.destination_port)}`;
+}
 
 export function TopologyView() {
   const [data, setData] = useState<TopologyData | null>(null);
@@ -221,7 +227,7 @@ export function TopologyView() {
           </label>
           <label className="path-endpoint">
             Destination IP
-            <input value={destinationIp} onChange={(e) => setDestinationIp(e.target.value)} placeholder="省略時はSegment範囲" />
+            <input value={destinationIp} onChange={(e) => setDestinationIp(e.target.value)} placeholder="NAT前のIP（省略時はSegment範囲）" />
           </label>
           <label>
             Protocol
@@ -328,6 +334,9 @@ export function TopologyView() {
                 {" → "}{result.flow.original.destination_addresses.join(", ") || "不明"}
               </p>
             )}
+            {result.flow && result.steps.some(step => step.nat?.length) && (
+              <p>最終通信: {packetSummary(result.flow.current)}</p>
+            )}
             {result.path.length > 0 ? (
               <div className="path-chain">
                 {result.path.map((id, i) => (
@@ -371,9 +380,19 @@ export function TopologyView() {
                         {" → "}{step.flow.current.destination_addresses.join(", ") || "不明"}
                       </small>
                     )}
+                    {!!step.nat?.length && step.packet_in && step.packet_out && (
+                      <small>
+                        受信時: {packetSummary(step.packet_in)}
+                        <br />処理後: {packetSummary(step.packet_out)}
+                      </small>
+                    )}
                     {!!step.nat?.length && step.nat.map((item) => (
                       <small key={`${item.type}:${item.name}`}>
                         NAT: {item.name} ({item.type}, {item.confidence})
+                        {` · ${item.applied ? "適用済み" : item.type === "exclude" && item.confidence === "EXACT" ? "除外" : "未適用"}`}
+                        {item.before && item.after && item.applied && (
+                          <><br />変換前: {packetSummary(item.before)}<br />変換後: {packetSummary(item.after)}</>
+                        )}
                         {item.evaluation_order ? ` · ${item.evaluation_order}` : ""}
                         {item.note ? ` · ${item.note}` : ""}
                       </small>
@@ -395,7 +414,7 @@ export function TopologyView() {
         )}
         <p className="topology-note">
           <CircleHelp />
-          各hopで通信元・通信先を保持し、静的ルートと通信stateを評価します。NATは候補表示のみで、変換後の通信判定は未対応です。動的ルーティング、物理配線、実際の稼働状態は含まれず、根拠不足はUNKNOWNとして扱います。
+          NAT前の宛先Segment・IPを指定してください。対応するNATは変換後のIP・portで経路と後続機器を評価し、実際の到達先を表示します。変換先や処理順を確定できない場合はPARTIALとなります。動的ルーティング、物理配線、実際の稼働状態は含まれません。
         </p>
       </section>
     </div>

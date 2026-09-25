@@ -184,6 +184,8 @@ export interface FlowState {
   current: Packet;
 }
 export interface ReachabilityStep {
+  packet_in?: Packet | null;
+  packet_out?: Packet | null;
   flow?: FlowState | null;
   device: string;
   ingress: string;
@@ -198,6 +200,10 @@ export interface ReachabilityStep {
     translated_src?: string;
     translated_dst?: string;
     translated_port?: number;
+    stage?: "source" | "destination";
+    applied?: boolean;
+    before?: Packet | null;
+    after?: Packet | null;
     evaluation_order?: string;
     confidence: "EXACT" | "PARTIAL";
     note?: string;

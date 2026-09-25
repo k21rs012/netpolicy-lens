@@ -7,7 +7,7 @@ from collections import defaultdict
 from ..models import NATRule
 
 
-def scope_junos_nat(lines: list[str], rules: list[NATRule]) -> None:
+def scope_junos_nat(lines: list[str], rules: list[NATRule], device: str) -> None:
     contexts = defaultdict(lambda: {"from": [], "to": []})
     unknown = defaultdict(list)
     rule_unknown = defaultdict(list)
@@ -35,6 +35,13 @@ def scope_junos_nat(lines: list[str], rules: list[NATRule]) -> None:
                 pools[(m[1], m[2])].append(m[3].split()[1])
             elif not re.fullmatch(r"address port \d+", m[3]):
                 pool_unknown[(m[1], m[2])].append(m[3])
+    known = {(r.type, r.name) for r in rules}
+    for kind, name in rule_unknown:
+        if (kind, name) not in known:
+            rules.insert(0, NATRule(device=device, name=name, type=kind, sequence=0,
+                                   unsupported_matches=["unparsed NAT rule"]))
+    set_names = {kind: {r.name.split("/", 1)[0] for r in rules if r.type == kind}
+                 for kind in {"source", "destination", "static"}}
     for rule in rules:
         kind = rule.type
         name = rule.name.split("/", 1)[0]
@@ -63,6 +70,6 @@ def scope_junos_nat(lines: list[str], rules: list[NATRule]) -> None:
                 rule.unsupported_matches.append("NAT pool range/options or unresolved pool")
         # Different rule-set selectors have precedence rules; do not flatten
         # multiple sets into one globally ordered chain and guess a winner.
-        same_stage_sets = {r.name.split("/", 1)[0] for r in rules if r.type == kind}
+        same_stage_sets = set_names[kind]
         if len(same_stage_sets) > 1:
             rule.unsupported_matches.append("multiple NAT rule-set precedence")

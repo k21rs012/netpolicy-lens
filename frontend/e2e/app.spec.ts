@@ -158,3 +158,34 @@ for (const icmpType of ["0", "8"]) {
     expect(url.searchParams.has("source_port")).toBe(false);
   });
 }
+
+for (const width of [390, 1280]) {
+  test(`NATの変換前後と適用状態を表示する（${width}px）`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(() => localStorage.removeItem("netpolicy-sidebar-collapsed"));
+    await page.reload();
+    const before = { source_addresses: ["10.0.1.10/32"], destination_addresses: ["203.0.113.10/32"], protocol: "tcp", source_port: 12345, destination_port: 8443, ip_version: 4, state: "new" };
+    const after = { ...before, destination_addresses: ["10.0.9.20/32"], destination_port: 443 };
+    await page.route("**/api/reachability?**", route => route.fulfill({ json: {
+      snapshot_id: "nat", source: "core-user", destination: "fw-server", protocol: "tcp", port: 8443,
+      state: "new", result: "ALLOW", path: ["segment:core-user", "device:core", "segment:fw-server"],
+      flow: { original: before, current: after },
+      steps: [{ device: "core", ingress: "core-user", egress: "fw-server", result: "ALLOW", reason: "translated permit",
+        flow: { original: before, current: after }, packet_in: before, packet_out: after,
+        nat: [{ name: "DNAT-WEB", type: "destination", stage: "destination", confidence: "EXACT", applied: true,
+          before, after, evaluation_order: "destination NAT → routing → policy → source NAT" }],
+      }], topology: { nodes: [], edges: [], summary: {} },
+    } }));
+    if (width < 768) await page.getByRole("button", { name: "メニューを開く" }).click();
+    await page.getByRole("button", { name: "Topology / Path" }).click();
+    if (width < 768) await page.getByRole("button", { name: "メニューを畳む" }).click();
+    await page.getByRole("button", { name: "経路を解析" }).click();
+    await expect(page.getByText(/NAT: DNAT-WEB/)).toContainText("適用済み");
+    await expect(page.getByText(/NAT: DNAT-WEB/)).toContainText("変換前: 10.0.1.10/32 (port 12345) → 203.0.113.10/32 (port 8443)");
+    await expect(page.getByText(/NAT: DNAT-WEB/)).toContainText("変換後: 10.0.1.10/32 (port 12345) → 10.0.9.20/32 (port 443)");
+    await expect(page.getByText(/最終通信:/)).toContainText("10.0.9.20/32 (port 443)");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByText(/NAT: DNAT-WEB/).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath("nat-flow.png"), animations: "disabled" });
+  });
+}
