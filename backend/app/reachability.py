@@ -41,10 +41,24 @@ def analyze_reachability(
                        state, source_port, ip_version, source_ip, destination_ip, icmp_type)
     ip_version = flow.current.ip_version
     base.update(flow=flow, ip_version=ip_version, icmp_type=icmp_type)
+    if any(segment_map[sid].type == "local" and not addresses for sid, addresses in (
+        (source, flow.current.source_addresses), (destination, flow.current.destination_addresses)
+    )):
+        return _result(**base, result="UNKNOWN", route_reason="機器自身のIPアドレスをconfigから確認できません")
+    # An explicit interface IP is host traffic even when its subnet was selected.
+    if destination_ip:
+        selected = segment_map[destination]
+        local = next((s for s in config_map[selected.device].segments
+                      if s.type == "local" and s.vrf == selected.vrf
+                      and str(ipaddress.ip_network(destination_ip)) in s.networks), None)
+        if local:
+            destination = local.id
     route_destination = segment_map[destination].model_copy(
         update={"networks": list(flow.current.destination_addresses)}
     )
     has_nat = any(not r.disabled for c in configs for r in c.nat)
+    if source == destination and segment_map[source].type == "local":
+        return _result(**base, result="UNKNOWN", route_reason="機器内のループバック通信は評価対象外です")
     if source == destination and not has_nat:
         return _result(**base, result="SAME_SEGMENT", path=[segment_node(source)])
 
@@ -93,6 +107,8 @@ def analyze_reachability(
                 neighbors = [neighbor for neighbor in neighbors
                              if not neighbor.startswith("segment:")
                              or neighbor.removeprefix("segment:") in allowed]
+        neighbors = [n for n in neighbors if not (n.startswith("segment:") and
+                     segment_map[n.removeprefix("segment:")].type == "local" and n != goal)]
         for neighbor in neighbors:
             if neighbor not in previous:
                 previous[neighbor] = current

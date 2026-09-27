@@ -193,3 +193,13 @@ Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。
 - **未対応**: PAN-OS、Cisco IOS/ASA/FTD、YamahaのNAT処理順、FortiOS VIP/central NAT/IP pool、単一ルールでのtwice NAT、複数SRX rule-setの優先関係、条件付きstatic NAT逆変換、NAT64、poolごとの候補分岐、実セッションに基づく戻り通信。NAT処理順が未対応の機器は、NATルールがある経路をPARTIALとします。
 - 既存Snapshotの旧NATモデルは再取り込みが必要です。旧モデルから失われた条件を推測して実行しません。Matrixは従来の静的概要であり、このNATパイプラインはPath traceに適用されます。
 - 処理順の根拠: [VyOS NAT44](https://docs.vyos.io/en/1.4/configuration/nat/nat44.html)、[SRX NAT overview](https://www.juniper.net/documentation/us/en/software/junos/nat/topics/topic-map/security-nat-overview.html)、[RouterOS packet flow](https://help.mikrotik.com/docs/spaces/ROS/pages/328227/Packet%2BFlow%2Bin%2BRouterOS)、[FortiOS fixed port](https://docs.fortinet.com/document/fortigate/6.2.1/technical-note-fixed-port-on-firewall-policy/12/fd40732)。[PAN-OSはPolicyにNAT前アドレス・NAT後zoneを用いる](https://docs.paloaltonetworks.com/ngfw/networking/nat/nat-policy-rules)ため、他OSの処理順を流用しません。
+
+
+### VyOSの機器自身宛て・機器発通信
+
+- configを再importすると、Path traceのSource / Destinationに「LOCAL · 機器自身」（local-zoneがあればその名前）が追加されます。ネットワーク範囲ではなく、設定されたinterface・loopbackのIPをIPv4 /32・IPv6 /128として保持します。VRFごとに分離します。
+- 機器自身宛てはDestination、機器発通信はSourceで「機器自身」を選びます。複数IPがある場合はSource IP / Destination IPで絞れます。通常のSegmentを選んでも、Destination IPがその機器自身のアドレスならinputとして評価します。
+- input / output / forwardを分離し、対応するbase chainとlocal-zoneのルールを評価します。同じrulesetを複数zone pairに適用した設定を保持し、IPv4 / IPv6それぞれにzone既定動作を適用します。未定義rulesetはPARTIALです。
+- DNAT後に機器自身へ到達する通信はinputで評価します。機器発通信はprerouting DNATを通さず、output評価後にSNATを適用します。local endpointから物理リンクは推定しません。
+- 実サービスの待受状態、実セッション、機器内のループバック通信は確認しません。IP不明のlocal endpointはUNKNOWNです。旧Snapshotは再importが必要です。
+- 仕様根拠: [VyOS 1.4 Firewall](https://docs.vyos.io/en/1.4/configuration/firewall/)、[Zone Based Firewall](https://docs.vyos.io/en/1.4/configuration/firewall/zone.html)。

@@ -200,10 +200,11 @@ export function TopologyView() {
           </div>
           <Route />
         </div>
+        <p className="muted">VyOSの機器自身宛てはDestination、機器発通信はSourceで「機器自身」を選択します。必要に応じてIPを指定してください。</p>
         <div className="path-controls">
           <label className="path-endpoint">
             Source
-            <select value={src} onChange={(e) => setSrc(e.target.value)}>
+            <select aria-label="Source" value={src} onChange={(e) => setSrc(e.target.value)}>
               {segments.map((n) => (
                 <option key={n.id} value={n.entity_id}>
                   {optionLabel(n)}
@@ -213,7 +214,7 @@ export function TopologyView() {
           </label>
           <label className="path-endpoint">
             Destination
-            <select value={dst} onChange={(e) => setDst(e.target.value)}>
+            <select aria-label="Destination" value={dst} onChange={(e) => setDst(e.target.value)}>
               {segments.map((n) => (
                 <option key={n.id} value={n.entity_id}>
                   {optionLabel(n)}

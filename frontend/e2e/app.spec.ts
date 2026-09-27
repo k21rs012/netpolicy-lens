@@ -316,3 +316,23 @@ for (const width of [390, 1280]) {
     await page.screenshot({ path: testInfo.outputPath("sidebar-control-dark.png"), animations: "disabled" });
   });
 }
+
+test("機器自身をSourceとDestinationに選んで解析できる", async ({ page }) => {
+  await page.route("**/api/topology", route => route.fulfill({ json: {
+    nodes: [
+      { id: "segment:edge-lan", entity_id: "edge-lan", type: "segment", label: "LAN", subtitle: "10.0.1.0/24", device: "edge" },
+      { id: "segment:edge-local", entity_id: "edge-local", type: "segment", segment_type: "local", label: "LOCAL · 機器自身", subtitle: "10.0.1.1/32", device: "edge" },
+    ], edges: [], summary: { devices: 1, segments: 2, adjacencies: 0 },
+  } }));
+  await page.getByRole("button", { name: "Topology / Path" }).click();
+  await expect(page.getByText(/VyOSの機器自身宛てはDestination/)).toBeVisible();
+  for (const outbound of [false, true]) {
+    await page.getByLabel("Source", { exact: true }).selectOption(outbound ? "edge-local" : "edge-lan");
+    await page.getByLabel("Destination", { exact: true }).selectOption(outbound ? "edge-lan" : "edge-local");
+    const request = page.waitForRequest(item => item.url().includes("/api/reachability"));
+    await page.getByRole("button", { name: "経路を解析" }).click();
+    const url = new URL((await request).url());
+    expect(url.searchParams.get(outbound ? "src" : "dst")).toBe("edge-local");
+    await expect(page.getByRole("button", { name: "経路を解析" })).toBeEnabled();
+  }
+});

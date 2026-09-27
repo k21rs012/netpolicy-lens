@@ -64,6 +64,10 @@ def policy_coverage(policy: Policy, src: Segment, dst: Segment) -> Coverage:
     if policy.dst_segments and dst.id not in policy.dst_segments: return "NONE"
     if not policy.src_segments and src.device != policy.device: return "NONE"
     if not policy.dst_segments and dst.device != policy.device: return "NONE"
+    if policy.ip_version:
+        for segment in (src, dst):
+            if segment.networks and not any(ipaddress.ip_network(n, strict=False).version == policy.ip_version for n in segment.networks):
+                return "NONE"
     src_coverage = _network_coverage(policy.src, src)
     dst_coverage = _network_coverage(policy.dst, dst)
     if policy.src_negate: src_coverage = {"FULL": "NONE", "NONE": "FULL", "PARTIAL": "PARTIAL"}[src_coverage]
@@ -78,6 +82,13 @@ def effective_policies(policies: list[Policy], src: Segment, dst: Segment) -> li
     effective: list[tuple[Policy, Coverage, list[str]]] = []
     for policy in sorted((item for item in policies if item.enabled),
                          key=lambda item: (item.device, policy_chain_key(item), policy_order(item))):
+        if policy.chain_id and policy.chain_id.startswith("vyos:"):
+            hook = "input" if dst.type == "local" else "output" if src.type == "local" else "forward"
+            name = policy.chain_id.split(":", 2)[-1]
+            if name.startswith("base-") and name != f"base-{hook}":
+                continue
+            if not policy.entrypoint:
+                continue
         coverage = policy_coverage(policy, src, dst)
         if coverage == "NONE": continue
         if policy.action in {"continue", "return"} or not policy.terminal:

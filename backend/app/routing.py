@@ -33,6 +33,8 @@ def routed_egress(
     ingress_interfaces = [item for item in config.interfaces if ingress and item.segment_id == ingress.id]
     if any(item.policy_route_map for item in ingress_interfaces):
         return set(), "PBR configured (unsupported match)"
+    if destination.device == config.device.id and destination.type == "local" and destination.vrf != source_vrf:
+        return set(), "local endpoint belongs to another VRF"
     addresses = _destination_addresses(destination)
     if ip_version:
         addresses = [address for address in addresses if address.version == ip_version]
@@ -95,7 +97,7 @@ def routed_egress(
                 continue
             directly_attached = False
             for segment in attached.values():
-                if segment.vrf != source_vrf:
+                if segment.vrf != source_vrf or segment.type == "local":
                     continue
                 for raw in segment.networks:
                     try:

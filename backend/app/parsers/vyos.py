@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 import shlex
 from collections import defaultdict
@@ -126,7 +127,7 @@ class VyOSParser(BaseConfigParser):
         zone_members: dict[str, list[str]] = defaultdict(list)
         local_zones: set[str] = set()
         zone_defaults: dict[str, str] = {}
-        zone_policies: dict[ChainKey, tuple[str, str]] = {}
+        zone_policies: dict[ChainKey, list[tuple[str, str]]] = defaultdict(list)
         rules: dict[RuleKey, dict[str, str]] = defaultdict(dict)
         rule_lines: dict[RuleKey, list[tuple[int, str]]] = defaultdict(list)
         chain_defaults: dict[ChainKey, str] = {}
@@ -156,7 +157,7 @@ class VyOSParser(BaseConfigParser):
             if line.startswith("set system host-name "):
                 continue
             if match := re.match(
-                r"set interfaces (?:ethernet|bonding|bridge|dummy|wireguard|tunnel) (\S+)(?: vif (\d+))? (address|description|vrf) (.+)", line
+                r"set interfaces (?:ethernet|bonding|bridge|dummy|wireguard|tunnel|loopback) (\S+)(?: vif (\d+))? (address|description|vrf) (.+)", line
             ):
                 base, vlan, field, value = match.groups()
                 name = f"{base}.{vlan}" if vlan else base
@@ -188,9 +189,9 @@ class VyOSParser(BaseConfigParser):
                 r"set (?:firewall zone|zone-policy zone) (\S+) from (\S+) firewall (name|ipv6-name) (\S+)", line
             ):
                 family = "ipv6" if match.group(3) == "ipv6-name" else "ipv4"
-                zone_policies[(family, _unquote(match.group(4)))] = (
+                zone_policies[(family, _unquote(match.group(4)))].append((
                     _unquote(match.group(2)), _unquote(match.group(1))
-                )
+                ))
                 continue
 
             if match := re.match(
@@ -343,14 +344,14 @@ class VyOSParser(BaseConfigParser):
         ]
         zones: list[Zone] = []
         segments: list[Segment] = []
-        for name in dict.fromkeys([*zone_members, *local_zones]):
+        for name in dict.fromkeys([*zone_members, *sorted(local_zones), *zone_defaults]):
             members = zone_members[name]
             segment_id = f"{device_id}-zone-{slug(name)}"
             zones.append(Zone(device=device_id, name=name, interfaces=members, segment_id=segment_id))
             networks = [network for member in members if member in interfaces
                         for network in interface_networks(interfaces[member].addresses)]
             segments.append(Segment(
-                id=segment_id, name=name.upper(), type="zone", device=device_id,
+                id=segment_id, name=name.upper(), type="local" if name in local_zones else "zone", device=device_id,
                 networks=networks,
                 vrf=next((interfaces[item].vrf for item in members
                           if item in interfaces and interfaces[item].vrf), None),
@@ -368,6 +369,28 @@ class VyOSParser(BaseConfigParser):
                     vlan_id=interface.vlan_id, networks=interface_networks(interface.addresses),
                     vrf=interface.vrf,
                 ))
+
+        local_addresses: dict[str | None, list[str]] = defaultdict(list)
+        for interface in interfaces.values():
+            for address in interface.addresses:
+                try:
+                    host = ipaddress.ip_interface(address).ip
+                except ValueError:
+                    continue
+                local_addresses[interface.vrf].append(f"{host}/{host.max_prefixlen}")
+        local_addresses.setdefault(None, [])
+        local_zone_segments: dict[str, list[str]] = {}
+        for name in sorted(local_zones) or [None]:
+            original = next((item for item in segments if item.type == "local" and item.name == name.upper()), None) if name else None
+            ids = []
+            for vrf, addresses in local_addresses.items():
+                sid = (original.id if original else f"{device_id}-local") + (f"-vrf-{slug(vrf)}" if vrf else "")
+                ids.append(sid)
+                segments.append(Segment(id=sid, name=f"{name or 'LOCAL'} · 機器自身" + (f" ({vrf})" if vrf else ""),
+                                        type="local", device=device_id, networks=addresses, vrf=vrf))
+            if original:
+                segments.remove(original)
+                local_zone_segments[name] = ids
 
         segment_by_zone = {zone.name: zone.segment_id for zone in zones}
         policies: list[Policy] = []
@@ -419,7 +442,6 @@ class VyOSParser(BaseConfigParser):
             destination = [value.removeprefix("!") for value in destination]
             source_ports = group_values("source port group", "source port", ["any"])
             destination_ports = group_values("destination port group", "destination port", ["any"])
-            source_zone, destination_zone = zone_policies.get((family, name), (None, None))
             base_chain = name.removeprefix("base-") if (family, name) in base_chains else None
             direction = ({"input": "in", "output": "out"}.get(base_chain, base_chain)
                          if base_chain else "unknown")
@@ -428,33 +450,27 @@ class VyOSParser(BaseConfigParser):
             policies.append(Policy(
                 id=f"{device_id}:{family}:{name}:{sequence}", device=device_id,
                 name=name, sequence=sequence, src=source, dst=destination,
-                src_segments=[segment_by_zone[source_zone]] if source_zone in segment_by_zone else [],
-                dst_segments=[segment_by_zone[destination_zone]] if destination_zone in segment_by_zone else [],
                 protocol=[data.get("protocol", "ip")], src_ports=source_ports,
                 dst_ports=destination_ports, src_negate=src_negate, dst_negate=dst_negate,
                 action=action_map.get(data.get("action", ""), "unknown"),
-                direction="zone" if source_zone else direction,
+                direction=direction,
                 in_interfaces=group_values("inbound-interface group", "inbound-interface name", []),
                 out_interfaces=group_values("outbound-interface group", "outbound-interface name", []),
-                from_zone=source_zone, to_zone=destination_zone,
                 confidence=Confidence.PARTIAL if unsupported else Confidence.EXACT,
-                chain_id=(f"zone:{family}:{source_zone}:{destination_zone}"
-                          if source_zone else f"vyos:{family}:{name}"),
+                chain_id=f"vyos:{family}:{name}",
                 default_action=default_action or ("permit" if base_chain else "deny"),
                 default_jump_target=default_jump_targets.get((family, name)),
                 terminal=data.get("action") not in {"continue", "return"},
                 jump_target=data.get("jump-target"), states=data.get("states", "").split(),
                 ip_version=6 if family == "ipv6" else 4,
                 unsupported_matches=unsupported,
-                entrypoint=bool(source_zone) or base_chain == "forward",
+                entrypoint=bool(base_chain),
                 trace=self.trace(lines[0][0], "\n".join(item[1] for item in lines), lines[-1][0]),
             ))
 
         for (family, name), configured_default in chain_defaults.items():
-            source_zone, destination_zone = zone_policies.get((family, name), (None, None))
             base_chain = name.removeprefix("base-") if (family, name) in base_chains else None
-            chain_id = (f"zone:{family}:{source_zone}:{destination_zone}"
-                        if source_zone else f"vyos:{family}:{name}")
+            chain_id = f"vyos:{family}:{name}"
             if any(policy.chain_id == chain_id for policy in policies):
                 continue
             action = default_map.get(configured_default, "unknown")
@@ -463,32 +479,55 @@ class VyOSParser(BaseConfigParser):
             policies.append(Policy(
                 id=f"{device_id}:{family}:{name}:default", device=device_id,
                 name=name, sequence=999999,
-                src_segments=[segment_by_zone[source_zone]] if source_zone in segment_by_zone else [],
-                dst_segments=[segment_by_zone[destination_zone]] if destination_zone in segment_by_zone else [],
                 action="continue",
-                direction="zone" if source_zone else direction,
-                from_zone=source_zone, to_zone=destination_zone,
+                direction=direction,
                 chain_id=chain_id, default_action=action, terminal=False,
                 default_jump_target=default_jump_targets.get((family, name)),
                 ip_version=6 if family == "ipv6" else 4,
-                entrypoint=bool(source_zone) or base_chain == "forward",
+                entrypoint=bool(base_chain),
             ))
 
-        configured_pairs = set(zone_policies.values())
-        for destination_zone, default in zone_defaults.items():
+        def zone_ids(name: str) -> list[str]:
+            return local_zone_segments.get(name, [segment_by_zone[name]] if name in segment_by_zone else [])
+
+        definitions = list(policies)
+        for (family, name), pairs in zone_policies.items():
+            for source_zone, destination_zone in dict.fromkeys(pairs):
+                templates = [rule for rule in definitions if rule.chain_id == f"vyos:{family}:{name}"]
+                if not templates:
+                    templates = [Policy(id=f"{device_id}:{family}:{name}:missing", device=device_id,
+                                        name=name, sequence=0, action="unknown", ip_version=6 if family == "ipv6" else 4,
+                                        unsupported_matches=[f"undefined ruleset: {name}"], confidence=Confidence.PARTIAL)]
+                    warnings.append(ParserWarning(device=device_id, line=0, config=name,
+                                                  reason="undefined zone ruleset", parser=self.parser_id))
+                for template in templates:
+                    policies.append(template.model_copy(update={
+                        "id": f"{template.id}:zone:{source_zone}:{destination_zone}",
+                        "src_segments": zone_ids(source_zone), "dst_segments": zone_ids(destination_zone),
+                        "direction": "zone", "from_zone": source_zone, "to_zone": destination_zone,
+                        "chain_id": f"zone:{family}:{source_zone}:{destination_zone}", "entrypoint": True,
+                    }))
+        configured_pairs = {(family, source, destination) for (family, _), pairs in zone_policies.items()
+                            for source, destination in pairs}
+        for destination_zone in segment_by_zone:
+            default = zone_defaults.get(destination_zone, "drop")
             for source_zone in segment_by_zone:
-                if source_zone == destination_zone or (source_zone, destination_zone) in configured_pairs:
+                if source_zone == destination_zone:
                     continue
                 for family, version in (("ipv4", 4), ("ipv6", 6)):
+                    if (family, source_zone, destination_zone) in configured_pairs:
+                        continue
                     policies.append(Policy(
                         id=f"{device_id}:zone-default:{family}:{source_zone}:{destination_zone}",
                         device=device_id, name=f"zone-default-{destination_zone}", sequence=999999,
-                        src_segments=[segment_by_zone[source_zone]],
-                        dst_segments=[segment_by_zone[destination_zone]], action=action_map[default],
-                        direction="zone", from_zone=source_zone, to_zone=destination_zone,
+                        src_segments=zone_ids(source_zone), dst_segments=zone_ids(destination_zone),
+                        action=action_map[default], direction="zone", from_zone=source_zone, to_zone=destination_zone,
                         chain_id=f"zone:{family}:{source_zone}:{destination_zone}",
                         default_action=default_map[default], ip_version=version,
                     ))
+
+        # Put applied rules first for diagnostics; retain definitions for jump targets.
+        policies.sort(key=lambda rule: not rule.entrypoint)
 
         nat_rules: list[NATRule] = []
         for (kind, sequence), data in nat_data.items():

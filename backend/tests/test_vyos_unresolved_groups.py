@@ -28,7 +28,7 @@ set firewall ipv4 forward filter rule 20 action accept
 
 
 def results(config):
-    source, destination = [segment.id for segment in config.segments]
+    source, destination = [segment.id for segment in config.segments if segment.type != "local"]
     path = analyze_reachability([config], source, destination, "tcp", 443, source_port=12345)
     cell = next(cell for cell in build_matrix([config])
                 if cell.source == source and cell.destination == destination)

@@ -14,7 +14,7 @@ EXPECTED = {
     "aoscx01.conf": ("aruba_aoscx", {"interfaces": 2, "segments": 1, "policies": 2}),
     "eos01.conf": ("arista_eos", {"interfaces": 2, "segments": 1, "policies": 2}),
     "allied01.conf": ("alliedware_plus", {"interfaces": 2, "segments": 1, "policies": 2}),
-    "vyos01.set": ("vyos", {"interfaces": 3, "segments": 3, "policies": 1}),
+    "vyos01.set": ("vyos", {"interfaces": 3, "segments": 4, "policies": 5}),
 }
 
 

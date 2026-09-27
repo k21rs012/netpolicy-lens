@@ -61,7 +61,7 @@ class VLAN(BaseModel):
 class Segment(BaseModel):
     id: str
     name: str
-    type: Literal["zone", "vlan", "interface", "subnet", "logical"]
+    type: Literal["zone", "vlan", "interface", "subnet", "logical", "local"]
     device: str
     vlan_id: int | None = None
     networks: list[str] = Field(default_factory=list)

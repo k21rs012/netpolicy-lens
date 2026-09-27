@@ -5,7 +5,7 @@ import ipaddress
 from collections import deque
 
 from .models import CanonicalConfig, Segment
-from .nat_pipeline import apply_nat_stage
+from .nat_pipeline import apply_nat_stage, NatStage
 from .policy_engine import evaluate_device
 from .reachability_models import FlowState, HopResult, TopologyData
 from .routing import routed_egress
@@ -66,7 +66,8 @@ def trace_nat_path(configs: list[CanonicalConfig], source: str, destination: str
             continue
         config = devices[ingress.device]
         device_path = [*path, f"device:{config.device.id}"]
-        dnat = apply_nat_stage(config, packet, ingress, None, "destination")
+        dnat = (NatStage(packet) if ingress.type == "local" else
+                apply_nat_stage(config, packet, ingress, None, "destination"))
         if dnat.blocked:
             reason = dnat.effects[-1].note or "NAT unresolved"
             step = HopResult(device=config.device.id, ingress=sid, egress=sid, result="PARTIAL", reason=reason,
@@ -79,6 +80,11 @@ def trace_nat_path(configs: list[CanonicalConfig], source: str, destination: str
         # Keep the existing routing resolver, supplying the translated target.
         # Resolve connected networks by address rather than stale Segment id.
         connected = [s for s in config.segments if s.vrf == ingress.vrf and _contains(s, routed_packet.destination_addresses)]
+        local_targets = [s for s in connected if s.type == "local"]
+        if local_targets:
+            connected = local_targets
+        else:
+            connected = [s for s in connected if s.type != "local"]
         # A range split across routing entries needs branch evaluation.
         if any(ipaddress.ip_network(a).version == ipaddress.ip_network(r.destination).version
                and ipaddress.ip_network(r.destination).subnet_of(ipaddress.ip_network(a))
@@ -95,9 +101,10 @@ def trace_nat_path(configs: list[CanonicalConfig], source: str, destination: str
                                 and any(ipaddress.ip_network(a).version == ipaddress.ip_network(r.destination).version
                                         and ipaddress.ip_network(a).subnet_of(ipaddress.ip_network(r.destination)) for a in routed_packet.destination_addresses)
                                 for r in config.routes)
-            if not more_specific:
+            if local_targets or not more_specific:
                 allowed, evidence = {s.id for s in connected}, "connected (current destination)"
         choices = [s for s in config.segments if s.vrf == ingress.vrf and (allowed is None or s.id in allowed)
+                   and (s.type != "local" or s in local_targets)
                    and (s.id != sid or routed_packet.destination_addresses != packet.destination_addresses)]
         if not choices:
             reason = evidence or "変換後の宛先への経路がありません"
@@ -122,6 +129,10 @@ def trace_nat_path(configs: list[CanonicalConfig], source: str, destination: str
                 verdict = "PARTIAL" if any(s.result in {"PARTIAL", "UNKNOWN"} for s in steps) else "DENY"
                 failures.append(finish(verdict, routed_packet, next_path, [*steps, step]))
                 continue
+            if egress.type == "local":
+                values = {s.result for s in [*steps, step]}
+                verdict = "UNKNOWN" if "UNKNOWN" in values else "PARTIAL" if "PARTIAL" in values else "ALLOW"
+                return finish(verdict, routed_packet, next_path, [*steps, step])
             snat = apply_nat_stage(config, routed_packet, ingress, egress, "source", step.policy)
             step.nat.extend(snat.effects)
             if snat.blocked:

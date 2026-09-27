@@ -55,7 +55,7 @@ def build_topology_model(configs: list[CanonicalConfig]) -> TopologyData:
             ))
     for index, left in enumerate(segments):
         for right in segments[index + 1:]:
-            if left.device == right.device:
+            if left.device == right.device or left.type == "local" or right.type == "local":
                 continue
             networks = _overlap(left, right)
             if networks:

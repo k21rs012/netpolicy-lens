@@ -41,6 +41,12 @@ def policy_applies(
 ) -> bool:
     if not policy.enabled:
         return False
+    if config.device.network_os == "vyos" and policy.chain_id and policy.chain_id.startswith("vyos:"):
+        hook = "input" if egress.type == "local" else "output" if ingress.type == "local" else "forward"
+        name = policy.chain_id.split(":", 2)[-1]
+        if name.startswith("base-") and name != f"base-{hook}":
+            return False
+
     if policy.ip_version:
         def versions(segment: Segment) -> set[int]:
             result: set[int] = set()
@@ -247,6 +253,15 @@ def evaluate_device(
         value for interface in config.interfaces if interface.segment_id == egress.id
         for value in (interface.name, interface.zone) if value
     }
+    if config.device.network_os == "vyos":
+        def zoned(segment: Segment) -> bool:
+            return any(segment.id == z.segment_id or
+                       (segment.type == "local" and segment.id.startswith(z.segment_id + "-vrf-"))
+                       for z in config.zones)
+        local_without_zone = any(s.type == "local" and not zoned(s) for s in (ingress, egress))
+        if not local_without_zone and zoned(ingress) != zoned(egress):
+            return HopResult(device=config.device.id, ingress=ingress.id, egress=egress.id,
+                             result="DENY", reason="VyOSのzone所属interfaceと非所属interface間は転送不可")
     chains: dict[tuple[str, ...], list[Policy]] = {}
     for policy in config.policies:
         if ip_version and policy.ip_version and policy.ip_version != ip_version:
