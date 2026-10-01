@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, CircleHelp, LayoutGrid, Network,
+  AlertTriangle, ArrowRight, ChevronDown, CircleHelp, LayoutGrid, Network,
   RefreshCw, Route, Server, Wifi, WifiOff,
 } from "lucide-react";
 
@@ -74,6 +74,7 @@ export function TopologyView() {
       </div>
     );
   const segments = data.nodes.filter((n) => n.type === "segment");
+  const hasLocalEndpoint = segments.some((n) => n.segment_type === "local");
   const devices = data.nodes.filter((n) => n.type === "device");
   const segmentPositions = Object.fromEntries(
     segments.map((n, i) => [n.id, { x: 90 + i * 150, y: 285 }]),
@@ -200,35 +201,38 @@ export function TopologyView() {
           </div>
           <Route />
         </div>
-        <p className="muted">VyOSの機器自身宛てはDestination、機器発通信はSourceで「機器自身」を選択します。必要に応じてIPを指定してください。</p>
         <div className="path-controls">
           <label className="path-endpoint">
             Source
-            <select aria-label="Source" value={src} onChange={(e) => setSrc(e.target.value)}>
+            <select aria-describedby={hasLocalEndpoint ? "source-local-hint" : undefined} aria-label="Source" value={src} onChange={(e) => setSrc(e.target.value)}>
               {segments.map((n) => (
                 <option key={n.id} value={n.entity_id}>
                   {optionLabel(n)}
                 </option>
               ))}
             </select>
+            {hasLocalEndpoint && <small className="path-field-hint" id="source-local-hint">機器からの通信は「機器自身」を選択</small>}
           </label>
           <label className="path-endpoint">
             Destination
-            <select aria-label="Destination" value={dst} onChange={(e) => setDst(e.target.value)}>
+            <select aria-describedby={hasLocalEndpoint ? "destination-local-hint" : undefined} aria-label="Destination" value={dst} onChange={(e) => setDst(e.target.value)}>
               {segments.map((n) => (
                 <option key={n.id} value={n.entity_id}>
                   {optionLabel(n)}
                 </option>
               ))}
             </select>
+            {hasLocalEndpoint && <small className="path-field-hint" id="destination-local-hint">機器への通信は「機器自身」を選択</small>}
           </label>
           <label className="path-endpoint">
             Source IP
-            <input value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} placeholder="省略時はSegment範囲" />
+            <input aria-label="Source IP" aria-describedby="source-ip-hint" value={sourceIp} onChange={(e) => setSourceIp(e.target.value)} placeholder="省略時はSegment範囲" />
+            <small className="path-field-hint" id="source-ip-hint">省略するとSegment全体を評価</small>
           </label>
           <label className="path-endpoint">
             Destination IP
-            <input value={destinationIp} onChange={(e) => setDestinationIp(e.target.value)} placeholder="NAT前のIP（省略時はSegment範囲）" />
+            <input aria-label="Destination IP" aria-describedby="destination-ip-hint" value={destinationIp} onChange={(e) => setDestinationIp(e.target.value)} placeholder="省略時はSegment範囲" />
+            <small className="path-field-hint" id="destination-ip-hint">NATを使う場合は変換前のIPを指定</small>
           </label>
           <label>
             Protocol
@@ -413,10 +417,13 @@ export function TopologyView() {
             </div>
           </div>
         )}
-        <p className="topology-note">
-          <CircleHelp />
-          NAT前の宛先Segment・IPを指定してください。対応するNATは変換後のIP・portで経路と後続機器を評価し、実際の到達先を表示します。変換先や処理順を確定できない場合はPARTIALとなります。動的ルーティング、物理配線、実際の稼働状態は含まれません。
-        </p>
+        <details className="path-help">
+          <summary><CircleHelp /><span>NATと解析範囲について</span><ChevronDown className="path-help-chevron" /></summary>
+          <div className="path-help-content">
+            <p>NATを使う場合は、変換前の宛先Segment・IPを指定してください。対応するNATは変換後のIP・portで経路と後続機器を評価し、実際の到達先を表示します。</p>
+            <p>変換先や処理順を確定できない場合はPARTIALとなります。動的ルーティング、物理配線、実際の稼働状態は評価対象外です。</p>
+          </div>
+        </details>
       </section>
     </div>
   );

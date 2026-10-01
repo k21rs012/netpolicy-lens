@@ -125,11 +125,15 @@ export function Matrix({
   ].sort((a, b) => a - b);
   return (
     <>
-      <p className="matrix-scope" role="note">
-        {data.evaluation === "path"
-          ? "通信条件を評価：Path traceと同じ経路・Policy・NAT解析です。Segment全体、新規通信、送信元port未指定として判定します。Portのみ指定した場合はTCP・UDP・SCTPを集約します。"
-          : "設定ルールの概要：表示サービスは経路全体の通信保証ではありません。ProtocolまたはPortを指定するとPath traceと同じ処理で評価します。"}
-      </p>
+      <div className="matrix-scope" role="note">
+        <CircleHelp aria-hidden="true" />
+        <div>
+          <strong>{data.evaluation === "path" ? "通信条件を評価中" : "設定ルールの概要"}</strong>
+          <p>{data.evaluation === "path"
+            ? "Path traceと同じ経路・Policy・NAT解析です。Segment全体・新規通信として評価します。Portのみ指定した場合はTCP・UDP・SCTPの結果を集約します。"
+            : "表示サービスは経路全体の通信保証ではありません。ProtocolまたはPortを指定すると、Path traceと同じ条件評価に切り替わります。"}</p>
+        </div>
+      </div>
       <div className="matrix-advanced">
         <div className="search">
           <Search />

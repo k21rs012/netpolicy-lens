@@ -317,7 +317,7 @@ for (const width of [390, 1280]) {
   });
 }
 
-test("機器自身をSourceとDestinationに選んで解析できる", async ({ page }) => {
+test("機器自身をSourceとDestinationに選んで解析できる", async ({ page }, testInfo) => {
   await page.route("**/api/topology", route => route.fulfill({ json: {
     nodes: [
       { id: "segment:edge-lan", entity_id: "edge-lan", type: "segment", label: "LAN", subtitle: "10.0.1.0/24", device: "edge" },
@@ -325,7 +325,22 @@ test("機器自身をSourceとDestinationに選んで解析できる", async ({ 
     ], edges: [], summary: { devices: 1, segments: 2, adjacencies: 0 },
   } }));
   await page.getByRole("button", { name: "Topology / Path" }).click();
-  await expect(page.getByText(/VyOSの機器自身宛てはDestination/)).toBeVisible();
+  await expect(page.getByLabel("Source", { exact: true })).toHaveAccessibleDescription("機器からの通信は「機器自身」を選択");
+  await expect(page.getByLabel("Destination", { exact: true })).toHaveAccessibleDescription("機器への通信は「機器自身」を選択");
+  await page.getByText("NATと解析範囲について", { exact: true }).click();
+  await expect(page.locator(".path-help-content")).toBeVisible();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width === 390) {
+      await page.getByRole("button", { name: "メニューを畳む" }).click();
+      await expect.poll(async () => page.locator(".sidebar").evaluate(el => el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
+    }
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await page.screenshot({ fullPage: true, animations: "disabled", path: testInfo.outputPath(`path-hints-${width}-${colorScheme}.png`) });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  }
   for (const outbound of [false, true]) {
     await page.getByLabel("Source", { exact: true }).selectOption(outbound ? "edge-local" : "edge-lan");
     await page.getByLabel("Destination", { exact: true }).selectOption(outbound ? "edge-lan" : "edge-local");
