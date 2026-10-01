@@ -17,12 +17,18 @@ export interface Trace {
   device: string;
   interface?: string;
   policy: string;
-  sequence: number;
+  sequence: number | null;
   action: string;
   service: string;
+  result?: Result;
+  reason?: string;
+  route?: string;
   trace?: { source_file: string; line_start: number; raw_config: string };
 }
 export interface Cell {
+  evaluation?: "policy_summary" | "path";
+  query?: string | null;
+  reason?: string | null;
   source: string;
   destination: string;
   result: Result;
@@ -32,6 +38,7 @@ export interface Cell {
   traces: Trace[];
 }
 export interface MatrixData {
+  evaluation?: "policy_summary" | "path";
   snapshot_id: string | null;
   segments: Segment[];
   cells: Cell[];

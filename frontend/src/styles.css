@@ -182,3 +182,7 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 }
 
 .sidebar {overflow-y:auto}
+
+.matrix-scope {font-size:12px;line-height:1.6;color:var(--muted);margin:12px 28px;overflow-wrap:anywhere}
+.cell.no_route {background:var(--line);color:var(--muted)}
+.verdict p small {display:block;margin-top:8px;line-height:1.6}

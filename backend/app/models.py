@@ -211,7 +211,10 @@ class CanonicalConfig(BaseModel):
 class MatrixCell(BaseModel):
     source: str
     destination: str
-    result: Literal["ALLOW", "DENY", "PARTIAL", "UNKNOWN", "SAME_SEGMENT"]
+    result: Literal["ALLOW", "DENY", "PARTIAL", "UNKNOWN", "SAME_SEGMENT", "NO_ROUTE"]
+    evaluation: Literal["policy_summary", "path"] = "policy_summary"
+    query: str | None = None
+    reason: str | None = None
     allowed: list[str] = Field(default_factory=list)
     denied: list[str] = Field(default_factory=list)
     policy_ids: list[str] = Field(default_factory=list)

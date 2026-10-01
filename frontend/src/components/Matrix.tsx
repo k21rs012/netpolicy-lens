@@ -125,6 +125,11 @@ export function Matrix({
   ].sort((a, b) => a - b);
   return (
     <>
+      <p className="matrix-scope" role="note">
+        {data.evaluation === "path"
+          ? "通信条件を評価：Path traceと同じ経路・Policy・NAT解析です。Segment全体、新規通信、送信元port未指定として判定します。Portのみ指定した場合はTCP・UDP・SCTPを集約します。"
+          : "設定ルールの概要：表示サービスは経路全体の通信保証ではありません。ProtocolまたはPortを指定するとPath traceと同じ処理で評価します。"}
+      </p>
       <div className="matrix-advanced">
         <div className="search">
           <Search />
@@ -232,6 +237,7 @@ export function Matrix({
                 "PARTIAL",
                 "UNKNOWN",
                 "SAME_SEGMENT",
+                "NO_ROUTE",
               ] as Result[]
             ).map((x) => (
               <option key={x}>{x}</option>
@@ -309,6 +315,7 @@ export function Matrix({
                 "PARTIAL",
                 "UNKNOWN",
                 "SAME_SEGMENT",
+                "NO_ROUTE",
               ] as Result[]
             ).map((x) => (
               <Status key={x} value={x} />
@@ -362,9 +369,10 @@ export function Detail({
       <div className="verdict">
         <Status value={cell.result} />
         <p>
-          {cell.result === "UNKNOWN"
+          {cell.reason || (cell.result === "UNKNOWN"
             ? "明示的なポリシー根拠を確認できません。安全のため許可とは判定しません。"
-            : "一致した設定ルールに基づく静的解析結果です。"}
+            : "一致した設定ルールに基づく静的解析結果です。")}
+          {cell.evaluation === "path" && <small>条件: {cell.query} · Segment全体 / 新規通信。特定IP・送信元port・IP familyはPath traceで指定できます。</small>}
         </p>
       </div>
       {(cell.allowed.length > 0 || cell.denied.length > 0) && (
@@ -400,15 +408,17 @@ export function Detail({
               <FileCode2 />
               <div>
                 <b>
-                  {t.policy} / Rule {t.sequence}
+                  {t.policy}{t.sequence != null ? ` / Rule ${t.sequence}` : ""}
                 </b>
                 <code>{t.trace?.raw_config || t.service}</code>
+                {t.reason && <small>{t.service}: {t.reason}</small>}
+                {t.route && <small>経路: {t.route}</small>}
                 <small>
                   {t.trace && `${t.trace.source_file}:${t.trace.line_start}`}
                 </small>
               </div>
             </div>
-            <Status value={t.action === "permit" ? "ALLOW" : "DENY"} />
+            <Status value={t.result || (t.action === "permit" ? "ALLOW" : ["deny", "reject", "restrict"].includes(t.action) ? "DENY" : "UNKNOWN")} />
           </div>
         ))
       ) : (

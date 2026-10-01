@@ -57,6 +57,7 @@ export default function App() {
     protocol, setProtocol, port, setPort, error, refresh, loadSample,
   } = useAppData();
   const [selected, setSelected] = useState<Cell | null>(null);
+  useEffect(() => setSelected(null), [matrix, protocol, port]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [dialog, setDialog] = useState(false);
   useEffect(() => {
@@ -182,14 +183,14 @@ export default function App() {
             <div className="matrix-tools">
               <div>
                 <Filter />
-                <b>表示条件</b>
+                <b>通信条件</b>
               </div>
               <label>
                 Protocol
                 <select
                   aria-label="プロトコル"
                   value={protocol}
-                  onChange={(e) => setProtocol(e.target.value)}
+                  onChange={(e) => { setProtocol(e.target.value); if (e.target.value === "icmp") setPort(""); }}
                 >
                   <option value="">ALL</option>
                   <option>tcp</option>
@@ -201,6 +202,7 @@ export default function App() {
                 Port
                 <input
                   aria-label="ポート"
+                  disabled={protocol === "icmp"}
                   inputMode="numeric"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
@@ -217,7 +219,7 @@ export default function App() {
                 <RefreshCw className="spin" />
                 解析結果を読み込み中
               </div>
-            ) : matrix.segments.length ? (
+            ) : error ? null : matrix.segments.length ? (
               <Matrix data={matrix} onCell={setSelected} />
             ) : (
               <Empty load={loadSample} />

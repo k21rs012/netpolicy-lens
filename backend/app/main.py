@@ -9,6 +9,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .analyzer import build_matrix
+from .matrix_query import build_query_matrix, normalize_query
 from .diff import compare_snapshots
 from .parsers import ParserRegistry
 from .sample import SAMPLES
@@ -164,22 +165,32 @@ def policies(snapshot_id: str | None = None, action: str | None = None, protocol
     return {"snapshot_id": resolved, "items": items}
 
 
+def matrix_data(snapshot_id: str | None, protocol: str | None, port: int | None,
+                source: str | None = None, destination: str | None = None):
+    try:
+        protocol = normalize_query(protocol, port)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    cfgs, resolved = configs(snapshot_id)
+    conditioned = protocol is not None or port is not None
+    cells = (build_query_matrix(cfgs, protocol, port, source, destination) if conditioned
+             else build_matrix(cfgs))
+    return {"snapshot_id": resolved, "evaluation": "path" if conditioned else "policy_summary",
+            "segments": [s for c in cfgs for s in c.segments], "cells": cells}
+
+
 @app.get("/api/matrix")
-def matrix(snapshot_id: str | None = None, protocol: str | None = Query(None), port: str | None = Query(None)):
-    cfgs, resolved = configs(snapshot_id); cells = build_matrix(cfgs)
-    if protocol or port:
-        needle = "/".join(x for x in ((protocol or "").upper(), port or "") if x)
-        for cell in cells:
-            cell.allowed = [x for x in cell.allowed if needle in x]
-            cell.denied = [x for x in cell.denied if needle in x]
-            if cell.result != "SAME_SEGMENT": cell.result = "PARTIAL" if cell.allowed and cell.denied else "ALLOW" if cell.allowed else "DENY" if cell.denied else "UNKNOWN"
-    return {"snapshot_id": resolved, "segments": [s for c in cfgs for s in c.segments], "cells": cells}
+def matrix(snapshot_id: str | None = None, protocol: str | None = None,
+           port: int | None = Query(None, ge=0, le=65535)):
+    return matrix_data(snapshot_id, protocol, port)
 
 
 @app.get("/api/matrix/{src}/{dst}")
-def matrix_detail(src: str, dst: str, snapshot_id: str | None = None):
-    data = matrix(snapshot_id)
-    if cell := next((x for x in data["cells"] if x.source == src and x.destination == dst), None): return cell
+def matrix_detail(src: str, dst: str, snapshot_id: str | None = None,
+                  protocol: str | None = None, port: int | None = Query(None, ge=0, le=65535)):
+    data = matrix_data(snapshot_id, protocol, port, src, dst)
+    if cell := next((x for x in data["cells"] if x.source == src and x.destination == dst), None):
+        return cell
     raise HTTPException(404, "Matrix cell not found")
 
 

@@ -7,7 +7,7 @@ from .flow import create_flow
 from .models import CanonicalConfig
 from .nat import nat_effects
 from .policy_engine import evaluate_device
-from .reachability_models import ReachabilityResult
+from .reachability_models import ReachabilityResult, TopologyData
 from .routing import routed_egress
 from .topology_graph import build_topology_model, segment_node
 
@@ -25,13 +25,14 @@ def analyze_reachability(
     source_ip: str | None = None,
     destination_ip: str | None = None,
     icmp_type: int | None = None,
+    *, topology: TopologyData | None = None, include_topology: bool = True,
 ) -> dict:
-    topology = build_topology_model(configs)
+    topology = topology if topology is not None else build_topology_model(configs)
     base = {
         "source": source, "destination": destination, "protocol": protocol,
         "port": port, "source_port": source_port, "ip_version": ip_version, "state": state,
         "assume_session": assume_session,
-        "topology": topology,
+        "topology": topology if include_topology else TopologyData(),
     }
     segment_map = {segment.id: segment for config in configs for segment in config.segments}
     config_map = {config.device.id: config for config in configs}

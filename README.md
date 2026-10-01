@@ -178,7 +178,7 @@ Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。
 - `access-list hardware` → `vlan access-map` / `match access-group` → `vlan filter ... vlan-list ... input` の関連付けを解析します。VLAN一覧の範囲・カンマ指定、同じACLの複数VLANへの適用を保持します。
 - ハードウェアACLは設定順（明示sequenceがある場合はsequence順）に評価し、未一致時は通常転送として扱います。`access-list 10`等の管理用standard ACLは中継VLANへ自動適用しません。
 - Path traceのICMP選択時にtypeを指定できます。IPv4のping要求は8、応答は0です。type未指定でtype条件付きルールに一致する可能性がある場合はPARTIALです。APIは`icmp_type`（0〜255）を受け取ります。
-- Matrixはセグメント全体・全サービスの概要です。DNS、DHCP、ICMP typeなどの例外と拒否が混在すればPARTIALになります。特定通信はPath traceでIP・port・ICMP typeを指定してください。
+- 条件未指定のMatrixはセグメント全体・全サービスの設定概要です。DNS、DHCP、ICMP typeなどの例外と拒否が混在すればPARTIALになります。特定通信はPath traceでIP・port・ICMP typeを指定してください。
 - 未定義access-map/ACL、未対応map条件、port/global/QoSフィルターとの併用は警告とPARTIALで扱います。VLAN ACLが適用されていない方向、同一VLAN内のL2経路、管理プレーンのアクセス制御は今回の判定対象外です。既存Snapshotにはconfigの再importが必要です。
 - 検証根拠：[x540L 5.5.5公式リファレンス：ハードウェアパケットフィルター](https://www.allied-telesis.co.jp/support/list/awp/rel/5.5.5-2.1/613-003277_L/docs/overview-30.html)。実機の稼働状態・OSバージョン固有の差異は別途確認が必要です。
 
@@ -191,7 +191,7 @@ Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。
 - `flow.original`は入力を保持します。結果の`flow.current`は最終通信、各hopの`flow.current`はPolicy評価時の通信です。各hopの`packet_in` / `packet_out`、NAT効果の`before` / `after` / `applied`に受信・転送・実適用の根拠を返します。Policyで拒否した通信にSNATは適用しません。
 - 複数pool・範囲割り当て、未解決object、部分一致、未対応条件はPARTIALで停止し、後続の許可ルールへ落としません。動的PATは送信元portを未確定（null）として伝搬し、全体をPARTIALとします。DHCP等で外側interfaceのIPが不明なmasqueradeも断定しません。
 - **未対応**: PAN-OS、Cisco IOS/ASA/FTD、YamahaのNAT処理順、FortiOS VIP/central NAT/IP pool、単一ルールでのtwice NAT、複数SRX rule-setの優先関係、条件付きstatic NAT逆変換、NAT64、poolごとの候補分岐、実セッションに基づく戻り通信。NAT処理順が未対応の機器は、NATルールがある経路をPARTIALとします。
-- 既存Snapshotの旧NATモデルは再取り込みが必要です。旧モデルから失われた条件を推測して実行しません。Matrixは従来の静的概要であり、このNATパイプラインはPath traceに適用されます。
+- 既存Snapshotの旧NATモデルは再取り込みが必要です。旧モデルから失われた条件を推測して実行しません。ProtocolまたはPortを指定したMatrixにも、Path traceと同じNATパイプラインを適用します。条件未指定のMatrixは設定ルールの概要です。
 - 処理順の根拠: [VyOS NAT44](https://docs.vyos.io/en/1.4/configuration/nat/nat44.html)、[SRX NAT overview](https://www.juniper.net/documentation/us/en/software/junos/nat/topics/topic-map/security-nat-overview.html)、[RouterOS packet flow](https://help.mikrotik.com/docs/spaces/ROS/pages/328227/Packet%2BFlow%2Bin%2BRouterOS)、[FortiOS fixed port](https://docs.fortinet.com/document/fortigate/6.2.1/technical-note-fixed-port-on-firewall-policy/12/fd40732)。[PAN-OSはPolicyにNAT前アドレス・NAT後zoneを用いる](https://docs.paloaltonetworks.com/ngfw/networking/nat/nat-policy-rules)ため、他OSの処理順を流用しません。
 
 
@@ -203,3 +203,13 @@ Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。
 - DNAT後に機器自身へ到達する通信はinputで評価します。機器発通信はprerouting DNATを通さず、output評価後にSNATを適用します。local endpointから物理リンクは推定しません。
 - 実サービスの待受状態、実セッション、機器内のループバック通信は確認しません。IP不明のlocal endpointはUNKNOWNです。旧Snapshotは再importが必要です。
 - 仕様根拠: [VyOS 1.4 Firewall](https://docs.vyos.io/en/1.4/configuration/firewall/)、[Zone Based Firewall](https://docs.vyos.io/en/1.4/configuration/firewall/zone.html)。
+
+
+### Matrixの通信条件評価
+
+- ProtocolまたはPortを指定すると、Path traceと同じ経路・Policy・NAT解析でセルを再計算します。文字列検索ではないため、`443`を`8443`と取り違えず、`any`、ポート範囲、ルール優先順位、暗黙deny、jump、未解決条件を評価します。
+- 評価範囲は選択Segmentの全アドレス、新規通信、送信元port未指定です。Protocolだけの場合は宛先portも未指定で、ポート条件に一部だけ一致する場合はPARTIALです。未解決の条件やIP familyの曖昧さはPath traceと同じくPARTIAL / UNKNOWNを保持します。特定IP、送信元port、IP family、既存セッションの仮定はPath traceで指定してください。
+- Portだけの指定はTCP・UDP・SCTPを個別に評価し、結果が異なる場合はPARTIALです。Portは0〜65535の整数です。ICMPなどportを使わないprotocolとの併用、不正なprotocolやportは422で拒否します。
+- 経路なしはNO_ROUTEとしてPolicyのDENYと区別します。セル詳細には評価条件・理由・各chainの結果を表示し、条件指定時のALLOW / DENYラベルは経路全体の判定が確定した通信だけに付けます。NATがある場合の条件はNAT前です。
+- `/api/matrix?protocol=tcp&port=443` と `/api/matrix/{src}/{dst}?protocol=tcp&port=443` は同じ条件を評価します。レスポンスの`evaluation`は条件指定時`path`、未指定時`policy_summary`です。
+- 条件未指定は従来の設定ルール概要を表示し、画面上でも通信保証との違いを明記します。Snapshot Diffもこの概要に基づきます。動的経路・ECMP等のPath trace既存制約はそのまま適用されます。

@@ -336,3 +336,80 @@ test("機器自身をSourceとDestinationに選んで解析できる", async ({ 
     await expect(page.getByRole("button", { name: "経路を解析" })).toBeEnabled();
   }
 });
+
+function queriedMatrix(port: string, result: "ALLOW" | "DENY" | "PARTIAL" | "NO_ROUTE" = "ALLOW") {
+  const service = `TCP/${port}`;
+  return { snapshot_id: "snap-1", evaluation: "path", segments, cells: [
+    { source: "core-user", destination: "fw-server", evaluation: "path", query: service,
+      result, reason: `${service}: テスト判定根拠`, allowed: result === "ALLOW" ? [service] : [],
+      denied: result === "DENY" ? [service] : [], policy_ids: [],
+      traces: result === "NO_ROUTE" ? [] : [{ device: "core", policy: "EDGE-IN", sequence: null,
+        action: "unknown", result, service, reason: "適用Policyの既定動作" }],
+    },
+  ] };
+}
+
+for (const width of [390, 1280]) {
+test(`Matrixの通信条件・判定根拠・経路なしを表示する（${width}px）`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
+  if (width < 900 && !await page.locator(".app").evaluate(el => el.classList.contains("sidebar-collapsed")))
+    await page.getByRole("button", { name: "メニューを畳む" }).click();
+  await page.route("**/api/matrix?**", async route => {
+    const port = new URL(route.request().url()).searchParams.get("port") || "443";
+    await route.fulfill({ json: queriedMatrix(port, port === "443" ? "PARTIAL" : "NO_ROUTE") });
+  });
+  await page.getByLabel("プロトコル", { exact: true }).selectOption("tcp");
+  await page.getByLabel("ポート", { exact: true }).fill("443");
+  await expect(page.getByRole("note")).toContainText("Path traceと同じ");
+  const cell = page.locator('button[title^="USER (core) → SERVER"]');
+  await expect(cell).toHaveClass(/partial/);
+  await cell.click();
+  const detail = page.getByRole("dialog", { name: "通信判定の詳細" });
+  await expect(detail).toContainText("条件: TCP/443");
+  await expect(detail).toContainText("TCP/443: テスト判定根拠");
+  await expect(detail.locator(".trace .status")).toHaveClass(/partial/);
+  await expect(detail).not.toContainText("Rule null");
+  await page.getByRole("button", { name: "詳細を閉じる" }).click();
+  await page.getByLabel("ポート", { exact: true }).fill("22");
+  await expect(cell).toHaveClass(/no_route/);
+  await page.getByLabel("判定結果で絞り込み").selectOption("NO_ROUTE");
+  await cell.click();
+  await expect(detail).toContainText("経路なし");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("matrix-query.png") });
+});
+}
+
+test("遅いMatrix応答が新しい通信条件を上書きしない", async ({ page }) => {
+  let release: () => void = () => {};
+  await page.route("**/api/matrix?**", async route => {
+    const port = new URL(route.request().url()).searchParams.get("port") || "443";
+    if (port === "80") await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ json: queriedMatrix(port, port === "80" ? "DENY" : "ALLOW") });
+  });
+  const oldRequest = page.waitForRequest(r => r.url().includes("/api/matrix?") && r.url().includes("port=80"));
+  await page.getByLabel("ポート", { exact: true }).fill("80");
+  await oldRequest;
+  await page.getByLabel("ポート", { exact: true }).fill("443");
+  const cell = page.locator('button[title^="USER (core) → SERVER"]');
+  await expect(cell).toContainText("TCP/443");
+  const oldResponse = page.waitForResponse(r => r.url().includes("/api/matrix?") && r.url().includes("port=80"));
+  release();
+  await oldResponse;
+  await expect(cell).toContainText("TCP/443");
+  await expect(cell).toHaveClass(/allow/);
+});
+
+test("Matrix条件エラー時は古い結果を隠し、修正後に再表示する", async ({ page }) => {
+  await page.route("**/api/matrix?**", async route => {
+    const port = new URL(route.request().url()).searchParams.get("port") || "443";
+    if (port === "bad") await route.fulfill({ status: 422, json: { detail: "port must be an integer" } });
+    else await route.fulfill({ json: queriedMatrix(port) });
+  });
+  await page.getByLabel("ポート", { exact: true }).fill("bad");
+  await expect(page.getByRole("alert")).toContainText("port must be an integer");
+  await expect(page.locator(".matrix")).toHaveCount(0);
+  await page.getByLabel("ポート", { exact: true }).fill("443");
+  await expect(page.locator('button[title^="USER (core) → SERVER"]')).toContainText("TCP/443");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});

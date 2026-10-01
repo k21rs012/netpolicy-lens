@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
 import type { Capability, Device, MatrixData, Policy, Snapshot } from "../types";
@@ -18,17 +18,22 @@ export function useAppData() {
   const [protocol, setProtocol] = useState("");
   const [port, setPort] = useState("");
   const [error, setError] = useState("");
+  const [matrixError, setMatrixError] = useState("");
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const matrixRequest = useRef(0);
+  const [refreshIndex, setRefreshIndex] = useState(0);
 
   const refresh = async () => {
+    setRefreshIndex(value => value + 1);
     setLoading(true);
     setError("");
+    setMatrixError("");
     try {
-      const [matrixData, deviceData, policyData, capabilityData, debugData, snapshotData] =
+      const [deviceData, policyData, capabilityData, debugData, snapshotData] =
         await Promise.all([
-          api.matrix(protocol, port), api.devices(), api.policies(),
+          api.devices(), api.policies(),
           api.capabilities(), api.debug(), api.snapshots(),
         ]);
-      setMatrix(matrixData);
       setDevices(deviceData.items);
       setPolicies(policyData.items);
       setCapabilities(capabilityData);
@@ -46,11 +51,25 @@ export function useAppData() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      api.matrix(protocol, port).then(setMatrix).catch(() => {});
+    const request = ++matrixRequest.current;
+    setMatrixLoading(true);
+    setMatrixError("");
+    const timer = setTimeout(async () => {
+      try {
+        const value = await api.matrix(protocol, port);
+        if (request === matrixRequest.current) setMatrix(value);
+      } catch (cause) {
+        if (request === matrixRequest.current)
+          setMatrixError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        if (request === matrixRequest.current) setMatrixLoading(false);
+      }
     }, 250);
-    return () => clearTimeout(timer);
-  }, [protocol, port]);
+    return () => {
+      clearTimeout(timer);
+      if (request === matrixRequest.current) matrixRequest.current++;
+    };
+  }, [protocol, port, refreshIndex]);
 
   const loadSample = async () => {
     await api.sample();
@@ -58,7 +77,7 @@ export function useAppData() {
   };
 
   return {
-    matrix, devices, policies, capabilities, debug, snapshots, loading,
-    protocol, setProtocol, port, setPort, error, refresh, loadSample,
+    matrix, devices, policies, capabilities, debug, snapshots, loading: loading || matrixLoading,
+    protocol, setProtocol, port, setPort, error: matrixError || error, refresh, loadSample,
   };
 }
