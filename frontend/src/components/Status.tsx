@@ -6,7 +6,7 @@ import type { Result } from "../types";
 const resultLabel: Record<Result, string> = {
   ALLOW: "許可",
   DENY: "拒否",
-  PARTIAL: "一部許可",
+  PARTIAL: "部分的・未確定",
   UNKNOWN: "不明",
   SAME_SEGMENT: "同一",
   NO_ROUTE: "経路なし",

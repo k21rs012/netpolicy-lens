@@ -407,6 +407,7 @@ export function Detail({
               <span>{i + 1}</span>
               <b>{t.device}</b>
               <small>{t.interface || "zone policy"}</small>
+              {t.path_index && <small>経路 {t.path_index} · {t.path_result}</small>}
             </div>
             <div className="trace-rule">
               <FileCode2 />
@@ -416,7 +417,7 @@ export function Detail({
                 </b>
                 <code>{t.trace?.raw_config || t.service}</code>
                 {t.reason && <small>{t.service}: {t.reason}</small>}
-                {t.route && <small>経路: {t.route}</small>}
+                {t.route && <small>経路: {t.route}{t.next_hop ? ` · next-hop: ${t.next_hop}` : ""}</small>}
                 <small>
                   {t.trace && `${t.trace.source_file}:${t.trace.line_start}`}
                 </small>

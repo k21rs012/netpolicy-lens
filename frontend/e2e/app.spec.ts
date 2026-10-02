@@ -428,3 +428,44 @@ test("Matrix条件エラー時は古い結果を隠し、修正後に再表示�
   await expect(page.locator('button[title^="USER (core) → SERVER"]')).toContainText("TCP/443");
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1440, 390]) {
+    test(`複数経路の切り替えと探索上限表示 ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(() => localStorage.removeItem("netpolicy-sidebar-collapsed"));
+      await page.reload();
+      await page.evaluate((value) => document.documentElement.dataset.theme = value, theme);
+      const packet = { source_addresses: ["10.0.1.10/32"], destination_addresses: ["10.0.9.20/32"], protocol: "tcp", source_port: null, destination_port: 443, ip_version: 4, state: "new" };
+      const steps = ["ALLOW", "DENY"].map((result, index) => ({
+        device: index ? "fw" : "core", ingress: "core-user", egress: "fw-server", result,
+        reason: index ? "別経路の拒否ルール" : "許可ルール", route: "10.0.9.0/24", next_hop: `192.0.2.${index + 2}`,
+        nat: [{ name: "SNAT", type: "source", applied: true, confidence: "EXACT" }],
+      }));
+      const paths = steps.map((step, index) => ({ result: step.result, path: ["segment:core-user", `device:${step.device}`, "segment:fw-server"], steps: [step],
+        flow: { original: packet, current: { ...packet, source_addresses: [`203.0.113.${index ? 20 : 10}/32`] } } }));
+      await page.route("**/api/reachability**", route => route.fulfill({ json: {
+        source: "core-user", destination: "fw-server", protocol: "tcp", port: 443, state: "new", ip_version: 4,
+        ...paths[0], result: "PARTIAL", paths, paths_complete: false, route_reason: "経路探索の上限に達したため、未評価の候補があります",
+      } }));
+      if (width < 600) await page.getByRole("button", { name: "メニューを開く" }).click();
+      await page.getByRole("button", { name: "Topology / Path" }).click();
+      if (width < 600) await page.getByRole("button", { name: "メニューを畳む" }).click();
+      await page.getByRole("button", { name: "経路を解析" }).click();
+      await expect(page.getByRole("group", { name: "候補経路" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "経路 1: ALLOW", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator(".hop-list")).toContainText("192.0.2.2");
+      await page.getByRole("button", { name: "経路 2: DENY", exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("button", { name: "経路 2: DENY", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator(".hop-list")).toContainText("別経路の拒否ルール");
+      await expect(page.locator(".path-result")).toContainText("203.0.113.20/32");
+      await expect(page.locator(".path-result")).not.toContainText("203.0.113.10/32");
+      await expect(page.locator(".path-limit")).toContainText("未評価の候補");
+      expect(await page.locator(".path-options").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await page.locator(".path-result").screenshot({ path: `/tmp/netpolicy-ecmp-${theme}-${width}.png` });
+      await page.getByRole("button", { name: "経路を解析" }).click();
+      await expect(page.getByRole("button", { name: "経路 1: ALLOW", exact: true })).toHaveAttribute("aria-pressed", "true");
+    });
+  }
+}

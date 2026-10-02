@@ -98,13 +98,24 @@ class HopResult(BaseModel):
     trace: Trace | None = None
     chains: list[ChainVerdict] = Field(default_factory=list)
     route: str | None = None
+    next_hop: str | None = None
     nat: list[NatEffect] = Field(default_factory=list)
     flow: FlowState | None = None
     packet_in: Packet | None = None
     packet_out: Packet | None = None
 
 
+class PathResult(BaseModel):
+    result: PublicVerdict
+    path: list[str] = Field(default_factory=list)
+    steps: list[HopResult] = Field(default_factory=list)
+    route_reason: str | None = None
+    flow: FlowState | None = None
+
+
 class ReachabilityResult(BaseModel):
+    paths: list[PathResult] = Field(default_factory=list)
+    paths_complete: bool = True
     source: str
     destination: str
     protocol: str

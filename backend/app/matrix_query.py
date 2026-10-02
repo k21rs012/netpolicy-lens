@@ -51,19 +51,21 @@ def build_query_matrix(
                     denied.append(label)
                 reason = result["route_reason"] or " / ".join(step["reason"] for step in result["steps"])
                 reasons.append(f"{label}: {reason or result['result']}")
-                for step in result["steps"]:
-                    for verdict in step["chains"] or [step]:
-                        policy = policies.get(verdict.get("policy"))
-                        if policy:
-                            policy_ids.append(policy.id)
-                        traces.append({
-                            "device": step["device"], "interface": policy.interface if policy else None,
-                            "policy": policy.name if policy else verdict.get("chain") or "既定動作 / 経路",
-                            "sequence": policy.sequence if policy else None,
-                            "action": policy.action if policy else "unknown",
-                            "service": label, "result": verdict["result"], "reason": verdict["reason"],
-                            "route": step["route"], "trace": verdict.get("trace"),
-                        })
+                for index, path in enumerate(result.get("paths") or [result], 1):
+                    for step in path["steps"]:
+                        for verdict in step["chains"] or [step]:
+                            policy = policies.get(verdict.get("policy"))
+                            if policy:
+                                policy_ids.append(policy.id)
+                            traces.append({
+                                "device": step["device"], "interface": policy.interface if policy else None,
+                                "policy": policy.name if policy else verdict.get("chain") or "既定動作 / 経路",
+                                "sequence": policy.sequence if policy else None,
+                                "action": policy.action if policy else "unknown",
+                                "service": label, "result": verdict["result"], "reason": verdict["reason"],
+                                "route": step["route"], "trace": verdict.get("trace"),
+                                "path_index": index, "path_result": path["result"], "next_hop": step.get("next_hop"),
+                            })
             verdict = results[0] if len(set(results)) == 1 else "PARTIAL"
             cells.append(MatrixCell(
                 source=src.id, destination=dst.id, result=verdict, evaluation="path",

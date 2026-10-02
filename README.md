@@ -50,7 +50,7 @@ docker compose up -d --build
 - Canonical Modelとraw config / line trace
 - `ALLOW` / `DENY` / `PARTIAL` / `UNKNOWN` / `SAME_SEGMENT` Matrix
 - Path traceは元・現在の通信アドレス範囲、protocol、送信元/宛先port、IP family、stateを保持し、各hopのinterface/zoneとは分離してPolicyを評価します。Source IP / Destination IPは任意で指定でき、省略時は選択Segmentの範囲を評価します。指定IPは選択Segment内・同一familyに限ります。APIの追加引数は`source_ip` / `destination_ip`、結果と各stepの`flow.original` / `flow.current`に通信情報を返します。
-- 対応するNATは宛先変換→経路検索→Policy評価→送信元変換の順に適用し、変換後の通信情報を次の機器へ渡します。NATがある経路で宛先範囲が経路条件をまたぐ場合やECMPがある場合はPARTIALとし、1経路の結果を全体の保証にはしません。詳細は下記「NATを含むPath trace」を参照してください。
+- 対応するNATは宛先変換→経路検索→Policy評価→送信元変換の順に適用し、変換後の通信情報を次の機器へ渡します。NATを含むECMPも経路ごとに通信情報を分離して評価します。宛先範囲が経路条件をまたぐ場合はPARTIALとなり、Destination IPの指定が必要です。詳細は下記「NATを含むPath trace」を参照してください。
 - ヘッダーの月／太陽アイコンでライト・ダークモードを切り替えられます。初回はOS設定に追従し、手動選択はブラウザへ保存して再読み込み後や別タブにも反映します。
 - Matrixセル詳細とRule trace
 - Device / Policy / Parser Debug / Capability画面
@@ -163,7 +163,7 @@ npm run test:e2e
 - 実機接続、Config Push、自動修正は行いません。
 - configは外部サービスへ送信しません。
 - Topologyの機器間リンクは設定内サブネットの重複から推定し、物理配線を保証しません。
-- Path Traceはconnected/static routeの最長一致、recursive next-hop、blackhole/reject、IPv6 scoped next-hop、VRF、ACL/zone/global chain、指定したconnection stateとIP familyを評価します。ECMPの全経路集約は未対応です。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
+- Path Traceはconnected/static routeの最長一致、recursive next-hop、blackhole/reject、IPv6 scoped next-hop、VRF、ACL/zone/global chain、指定したconnection stateとIP familyを評価します。同じ最長プレフィックス・最小metricのECMP候補を個別に評価し、全経路の結果を集約します。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
 - 一致したNAT ruleと変換値、評価順、条件評価の確度はPath Traceに表示します。Rule順序、Interface、IP family、Protocol、Source/Destination Portを評価しますが、実セッションテーブルや時刻・ユーザー・URL categoryなどconfig外のランタイム条件は再現しません。`established` / `related` は実セッションの存在を確認できないため通常は `UNKNOWN` とし、画面で「既存セッションを仮定」を明示した場合だけstateful sessionとして評価します。
 - 未解決オブジェクトや適用関係が曖昧な場合は `UNKNOWN` を優先します。
 - Password / Secret / SNMP CommunityはSnapshot保存前とJSON Export時にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
@@ -212,4 +212,15 @@ Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。
 - Portだけの指定はTCP・UDP・SCTPを個別に評価し、結果が異なる場合はPARTIALです。Portは0〜65535の整数です。ICMPなどportを使わないprotocolとの併用、不正なprotocolやportは422で拒否します。
 - 経路なしはNO_ROUTEとしてPolicyのDENYと区別します。セル詳細には評価条件・理由・各chainの結果を表示し、条件指定時のALLOW / DENYラベルは経路全体の判定が確定した通信だけに付けます。NATがある場合の条件はNAT前です。
 - `/api/matrix?protocol=tcp&port=443` と `/api/matrix/{src}/{dst}?protocol=tcp&port=443` は同じ条件を評価します。レスポンスの`evaluation`は条件指定時`path`、未指定時`policy_summary`です。
-- 条件未指定は従来の設定ルール概要を表示し、画面上でも通信保証との違いを明記します。Snapshot Diffもこの概要に基づきます。動的経路・ECMP等のPath trace既存制約はそのまま適用されます。
+- 条件未指定は従来の設定ルール概要を表示し、画面上でも通信保証との違いを明記します。Snapshot Diffもこの概要に基づきます。ECMPもPath traceと同じ集約結果になり、Rule traceに経路番号・経路の判定・next-hopを表示します。動的経路などの既存制約は引き続き適用されます。
+
+### ECMP・複数経路
+
+- 同じ出口Interfaceの複数next-hop、複数出口、recursive next-hop、IPv6 scoped next-hop、VRFを扱います。経路が途中で合流しても、各経路のPolicy・NAT・通信情報は独立して保持します。低い優先順位の待機経路はECMP候補に含めません。
+- 全候補がALLOWならALLOW、全候補がDENYならDENY、全候補がNO_ROUTEならNO_ROUTE、全候補がUNKNOWNならUNKNOWNです。判定が混在する場合はPARTIALです。ループや未解決のnext-hopも候補から落とさず、不明な経路として残します。
+- APIの `paths` に各経路の判定・hop・NAT変換後の通信情報を返します。`paths_complete` は探索を打ち切っていないことを示します。従来のトップレベル `path` / `steps` / `flow` は先頭経路の互換表示であり、全候補を表しません。
+- Topology / Pathでは経路を選んで詳細を切り替えられます。ProtocolまたはPortを指定したMatrixも同じ経路評価を使います。
+- 探索上限は128経路・2,048状態・32 hopです。再帰next-hopも探索回数と深さを制限し、上限到達時は `paths_complete=false` / PARTIALにします。未評価の候補を許可扱いにはしません。
+- VyOSではnext-hop／Interfaceごとのdistance、disable、distance 255を反映します。仕様は[VyOS 1.4 static routing](https://docs.vyos.io/en/1.4/configuration/protocols/static.html)に基づきます。既存Snapshotには再Importで新しい解析情報を取り込んでください。
+- distance未指定の比較には通常1、FortiOSでは10を用います（[Cisco](https://www.cisco.com/c/en/us/support/docs/ip/border-gateway-protocol-bgp/15986-admin-distance.html)、[FortiOS](https://docs.fortinet.com/document/fortigate/7.2.10/administration-guide/139692/routing-concepts)）。SD-WAN固有の経路選択など、共通モデルに取り込めていない条件は対象外です。
+- 実機が選ぶECMPハッシュ、経路ごとの分配率、動的ルーティングの実RIB、リンク稼働状態は評価対象外です。接続は引き続きsubnet重複からの推定です。宛先範囲内で経路条件が変わる場合は、範囲の分割を行わずPARTIALを返します。

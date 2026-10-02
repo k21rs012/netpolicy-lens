@@ -14,6 +14,8 @@ export interface Segment {
   vlan_id?: number;
 }
 export interface Trace {
+  path_index?: number;
+  path_result?: Result;
   device: string;
   interface?: string;
   policy: string;
@@ -23,6 +25,7 @@ export interface Trace {
   result?: Result;
   reason?: string;
   route?: string;
+  next_hop?: string | null;
   trace?: { source_file: string; line_start: number; raw_config: string };
 }
 export interface Cell {
@@ -201,6 +204,7 @@ export interface ReachabilityStep {
   reason: string;
   policy: string | null;
   route?: string;
+  next_hop?: string | null;
   nat?: {
     name: string;
     type: string;
@@ -223,7 +227,16 @@ export interface ReachabilityStep {
     raw_config: string;
   } | null;
 }
+export interface ReachabilityPath {
+  result: Result;
+  path: string[];
+  steps: ReachabilityStep[];
+  flow?: FlowState | null;
+  route_reason?: string | null;
+}
 export interface ReachabilityData {
+  paths?: ReachabilityPath[];
+  paths_complete?: boolean;
   flow?: FlowState | null;
   snapshot_id: string | null;
   source: string;

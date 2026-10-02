@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from ..models import (
     AddressObject, CanonicalConfig, Confidence, Device, Interface, NATRule,
-    ParserCapabilities, ParserWarning, Policy, Route, Segment, ServiceObject,
+    ParserCapabilities, ParserWarning, Policy, Route, RouteOption, Segment, ServiceObject,
     VLAN, Zone,
 )
 from .base import BaseConfigParser
@@ -153,6 +153,14 @@ class VyOSParser(BaseConfigParser):
                       trace=self.trace(number, raw)),
             )
 
+        def route_option(route: Route, kind: str, value: str | None) -> RouteOption:
+            for option in route.options:
+                if (kind == "next-hop" and option.next_hop == value) or (kind == "interface" and option.interface == value) or option.route_type == kind:
+                    return option
+            option = RouteOption(**({"next_hop": value} if kind == "next-hop" else {"interface": value} if kind == "interface" else {"route_type": kind}))
+            route.options.append(option)
+            return option
+
         for number, line, raw, structural in commands:
             if line.startswith("set system host-name "):
                 continue
@@ -271,46 +279,35 @@ class VyOSParser(BaseConfigParser):
                 ))
                 continue
 
-            if match := re.match(
-                r"set protocols static route(6)? (\S+) (next-hop|interface) (\S+)(?: distance (\d+))?", line
+            if match := re.fullmatch(
+                r"set (?:vrf name (\S+) )?protocols static route(?:6)? (\S+) (next-hop|interface) (\S+)(?: (distance (\d+)|disable))?", line
             ):
-                _, destination, kind, value, distance = match.groups()
-                route = route_for(_unquote(destination), None, number, raw)
+                vrf, destination, kind, value, option_text, distance = match.groups()
+                route = route_for(_unquote(destination), _unquote(vrf) if vrf else None, number, raw)
                 value = _unquote(value)
+                option = route_option(route, kind, value)
                 if kind == "next-hop":
                     if value not in route.next_hops:
                         route.next_hops.append(value)
                     route.next_hop = route.next_hop or value
                 else:
-                    route.interface = value
+                    route.interface = route.interface or value
                 if distance:
-                    route.metric = int(distance)
+                    option.metric = int(distance)
+                if option_text == "disable":
+                    option.disabled = True
                 continue
-            if match := re.match(r"set protocols static route(?:6)? (\S+) (blackhole|reject|unreachable)", line):
-                route_for(_unquote(match.group(1)), None, number, raw).route_type = match.group(2)
-                continue
-            if match := re.match(r"set protocols static route(?:6)? (\S+) distance (\d+)", line):
-                route_for(_unquote(match.group(1)), None, number, raw).metric = int(match.group(2))
-                continue
-            if match := re.match(
-                r"set vrf name (\S+) protocols static route(?:6)? (\S+) (next-hop|interface) (\S+)(?: distance (\d+))?", line
-            ):
-                vrf, destination, kind, value, distance = match.groups()
-                route = route_for(_unquote(destination), _unquote(vrf), number, raw)
-                value = _unquote(value)
-                if kind == "next-hop":
-                    if value not in route.next_hops:
-                        route.next_hops.append(value)
-                    route.next_hop = route.next_hop or value
-                else:
-                    route.interface = value
+            if match := re.fullmatch(r"set (?:vrf name (\S+) )?protocols static route(?:6)? (\S+) (blackhole|reject|unreachable)(?: distance (\d+))?", line):
+                vrf, destination, kind, distance = match.groups()
+                route = route_for(_unquote(destination), _unquote(vrf) if vrf else None, number, raw)
+                route.route_type = kind
+                option = route_option(route, kind, None)
                 if distance:
-                    route.metric = int(distance)
+                    option.metric = int(distance)
                 continue
-            if match := re.match(
-                r"set vrf name (\S+) protocols static route(?:6)? (\S+) (blackhole|reject|unreachable)", line
-            ):
-                route_for(_unquote(match.group(2)), _unquote(match.group(1)), number, raw).route_type = match.group(3)
+            if match := re.fullmatch(r"set (?:vrf name (\S+) )?protocols static route(?:6)? (\S+) distance (\d+)", line):
+                vrf, destination, distance = match.groups()
+                route_for(_unquote(destination), _unquote(vrf) if vrf else None, number, raw).metric = int(distance)
                 continue
 
             if match := re.match(r"set nat (source|destination) rule (\d+)(?: (.+))?$", line):

@@ -18,6 +18,7 @@ function packetSummary(packet: Packet) {
 export function TopologyView() {
   const [data, setData] = useState<TopologyData | null>(null);
   const [result, setResult] = useState<ReachabilityData | null>(null);
+  const [pathIndex, setPathIndex] = useState(0);
   const [src, setSrc] = useState("");
   const [dst, setDst] = useState("");
   const [protocol, setProtocol] = useState("tcp");
@@ -47,6 +48,7 @@ export function TopologyView() {
     setBusy(true);
     setError("");
     try {
+      setPathIndex(0);
       setResult(
         await api.reachability(
           src, dst, protocol, protocol === "icmp" ? "" : port,
@@ -73,6 +75,7 @@ export function TopologyView() {
         Topologyを生成中
       </div>
     );
+  const selectedPath = result?.paths?.[pathIndex] ?? result;
   const segments = data.nodes.filter((n) => n.type === "segment");
   const hasLocalEndpoint = segments.some((n) => n.segment_type === "local");
   const devices = data.nodes.filter((n) => n.type === "device");
@@ -96,7 +99,7 @@ export function TopologyView() {
   });
   const width = Math.max(1040, segments.length * 150 + 30);
   const nodeById = Object.fromEntries(data.nodes.map((n) => [n.id, n]));
-  const pathSet = new Set(result?.path || []);
+  const pathSet = new Set(selectedPath?.path || []);
   const optionLabel = (n: TopologyNode) =>
     `${n.label} (${n.device || n.subtitle})`;
   return (
@@ -318,7 +321,7 @@ export function TopologyView() {
             {error}
           </div>
         )}
-        {result && (
+        {result && selectedPath && (
           <div className="path-result">
             <div className="path-verdict">
               <Status value={result.result} />
@@ -339,20 +342,38 @@ export function TopologyView() {
                 {" → "}{result.flow.original.destination_addresses.join(", ") || "不明"}
               </p>
             )}
-            {result.flow && result.steps.some(step => step.nat?.length) && (
-              <p>最終通信: {packetSummary(result.flow.current)}</p>
+            {result.route_reason && <p className="path-summary">{result.route_reason}</p>}
+            {result.paths_complete === false && (
+              <p className="path-limit" role="status"><AlertTriangle />未評価の候補があるため、全経路の到達性は確定していません。</p>
             )}
-            {result.path.length > 0 ? (
+            {!!result.paths?.length && result.paths.length > 1 && (
+              <div className="path-options" role="group" aria-label="候補経路">
+                {result.paths.map((path, index) => (
+                  <button type="button" key={index} aria-pressed={pathIndex === index}
+                    onClick={() => setPathIndex(index)} aria-label={`経路 ${index + 1}: ${path.result}`}>
+                    <span>経路 {index + 1}</span><Status value={path.result} />
+                    <small>{path.steps.map(step => nodeById[`device:${step.device}`]?.label || step.device).join(" → ") || "経路不明"}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!!result.paths?.length && result.paths.length > 1 && (
+              <p className="path-selected">経路 {pathIndex + 1} の詳細 · {selectedPath.route_reason || "下記の機器・ルールを順に評価"}</p>
+            )}
+            {selectedPath.flow && selectedPath.steps.some(step => step.nat?.length) && (
+              <p>最終通信: {packetSummary(selectedPath.flow.current)}</p>
+            )}
+            {selectedPath.path.length > 0 ? (
               <div className="path-chain">
-                {result.path.map((id, i) => (
-                  <span key={id}>
+                {selectedPath.path.map((id, i) => (
+                  <span key={`${id}:${i}`}>
                     <b>{nodeById[id]?.label || id}</b>
                     <small>
                       {nodeById[id]?.type === "device"
                         ? "policy hop"
                         : "segment"}
                     </small>
-                    {i < result.path.length - 1 && <ArrowRight />}
+                    {i < selectedPath.path.length - 1 && <ArrowRight />}
                   </span>
                 ))}
               </div>
@@ -363,7 +384,7 @@ export function TopologyView() {
               </div>
             )}
             <div className="hop-list">
-              {result.steps.map((step, i) => (
+              {selectedPath.steps.map((step, i) => (
                 <article key={`${step.device}:${i}`}>
                   <span className="hop-number">{i + 1}</span>
                   <div>
@@ -378,7 +399,7 @@ export function TopologyView() {
                   </div>
                   <div className="hop-reason">
                     <b>{step.reason}</b>
-                    <small>route: {step.route || "connected/inferred"}</small>
+                    <small>route: {step.route || "connected/inferred"}{step.next_hop ? ` · next-hop: ${step.next_hop}` : ""}</small>
                     {step.flow && (
                       <small>
                         評価アドレス: {step.flow.current.source_addresses.join(", ") || "不明"}
@@ -421,7 +442,7 @@ export function TopologyView() {
           <summary><CircleHelp /><span>NATと解析範囲について</span><ChevronDown className="path-help-chevron" /></summary>
           <div className="path-help-content">
             <p>NATを使う場合は、変換前の宛先Segment・IPを指定してください。対応するNATは変換後のIP・portで経路と後続機器を評価し、実際の到達先を表示します。</p>
-            <p>変換先や処理順を確定できない場合はPARTIALとなります。動的ルーティング、物理配線、実際の稼働状態は評価対象外です。</p>
+            <p>複数経路は候補ごとに評価します。全候補が許可ならALLOW、判定が混在する場合や探索上限に達した場合はPARTIALです。変換先や処理順が不明なNATもPARTIALになります。動的ルーティング、物理配線、実際の稼働状態は評価対象外です。</p>
           </div>
         </details>
       </section>

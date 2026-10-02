@@ -76,7 +76,16 @@ class Zone(BaseModel):
     trace: Trace | None = None
 
 
+class RouteOption(BaseModel):
+    next_hop: str | None = None
+    interface: str | None = None
+    metric: int | None = None
+    disabled: bool = False
+    route_type: Literal["unicast", "blackhole", "reject", "unreachable"] = "unicast"
+
+
 class Route(BaseModel):
+    options: list[RouteOption] = Field(default_factory=list)
     device: str
     destination: str
     next_hop: str | None = None
