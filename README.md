@@ -1,226 +1,277 @@
 # NetPolicy Lens
 
-マルチベンダー機器の設定をNetwork OS別Parserで読み込み、ベンダー非依存のCanonical Modelを経由して、Segment間の設定上の通信可否を可視化するローカルWebアプリです。
+複数ベンダーのネットワーク機器configを読み込み、セグメント間の通信可否とその根拠を確認するローカルWebアプリです。設定を共通モデルへ変換し、ポリシーマトリクス、複数機器の経路解析、NAT変換、ECMP候補、Snapshot間の差分を表示します。
 
-> **MVPの解析結果は静的なConfiguration Analysisです。** 完全なPacket Flow Simulationではありません。根拠を確認できない通信は推測で許可せず、`UNKNOWN` と表示します。
+解析は**設定に基づく静的評価**です。実機への接続や設定変更は行いません。実際の配線・経路表・セッション・サービスの稼働状態を確認するものではなく、根拠が不足する場合は `PARTIAL` / `UNKNOWN` として残します。
 
-## すぐ試す
+## 起動する
+
+DockerとDocker Composeを利用できる環境で、リポジトリのルートから実行します。
 
 ```bash
 docker compose up -d --build
 ```
 
-[http://localhost:8080](http://localhost:8080) を開き、「サンプルで始める」を選択します。単一・複数config、フォルダ、ZIPは右上の **Config Import** から読み込めます。「機器ごとに貼り付け」を選ぶと、機器単位の入力欄を追加してconfigを直接貼り付けられます。Import前にNetwork OSと検出信頼度を確認でき、信頼度が低いconfigは機器ごとにOSを指定します。設定はローカルのSQLiteにのみ保存されます。
+[http://localhost:8080](http://localhost:8080) を開き、**サンプルで始める**、または **Config Import** を選びます。Composeは `127.0.0.1:8080` に公開し、APIへはフロントエンドのnginxを経由してアクセスします。
 
-## 対応状況
+取り込んだ設定と解析モデルはSQLiteに保存します。Composeでは `netpolicy-data` 名前付きvolume内の `/app/data/netpolicy.db` を使用します。通常の停止ではデータを保持します。
 
-| Network OS | IF | VLAN | Route | ACL | Zone | Policy | NAT | IPv6 |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Cisco IOS / IOS-XE | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
-| Cisco NX-OS | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
-| Cisco ASA / FTD | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Juniper Junos / SRX | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Yamaha RTX | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
-| Fortinet FortiOS | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Palo Alto PAN-OS | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
-| HPE Aruba AOS-CX | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
-| Arista EOS | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
-| AlliedWare Plus | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
-| VyOS | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| ExtremeXOS / VOSS | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
-| MikroTik RouterOS | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
-
-## 実装済み
-
-- Cisco IOS / IOS-XE: Interface、VLAN、IPv4/IPv6 address、IPv4/IPv6 ACL、ACL binding、static route、static/PAT NAT
-- Cisco NX-OS: Ethernet/SVI、VLAN、IPv4/IPv6 ACL、ACL binding、prefix形式のstatic route
-- Cisco ASA / FTD: Interface/nameif、Zone Segment、Network Object、extended ACL、access-group binding、static route、object/manual NAT
-- Juniper Junos / SRX: set形式・階層形式、Interface、VLAN、Zone、Address Book/Set、Security Policy、静的Route、source/destination/static NAT、定義済み/独自application解決
-- Yamaha RTX: Interface、802.1Q VLAN、IPv4/IPv6 Filter、Filter binding、static route、NAT descriptor
-- Fortinet FortiOS / FortiGate: Interface、VLAN、Zone、Address/Service Object・Group、Firewall Policy、static route、Policy NAT
-- Palo Alto PAN-OS: set形式（vsys scope対応）、Interface、Zone、Address/Service Object・Group、Security Policy、Application解決、static route、NAT Policy
-- HPE Aruba AOS-CX: Interface、VLAN/SVI、IPv4/IPv6 ACL、`apply access-list` binding、static route
-- Arista EOS: Interface、VLAN/SVI、IPv4/IPv6 ACL、`ip access-group` binding、static route
-- AlliedWare Plus: Interface、VLAN/IP interface、software/hardware ACL、`access-group` / traffic-filter認識、static route
-- VyOS: set形式・1.4.x階層形式、Interface/VIF、local/通常Zone、IPv4/IPv6 base/custom chain、jump/default-jump、Firewall Group、state、ECMP/static/terminal route、条件付きsource/destination NAT
-- VyOS Firewallの未解決address/network/port/interface groupは、参照名・設定行をWarningに残し、該当する通信をPARTIALとして評価します。否定付きport/interface groupも未評価条件として扱います。既存SnapshotへParser修正を反映するにはconfigを再importしてください。
-- ExtremeXOS / VOSS: VLAN/SVI、IPv4 address、static route、基本ACL
-- MikroTik RouterOS: VLAN/Interface、Address List、Firewall Filter、static route、source/destination NAT
-- Network OS自動検出（複数特徴のスコアリング）
-- Canonical Modelとraw config / line trace
-- `ALLOW` / `DENY` / `PARTIAL` / `UNKNOWN` / `SAME_SEGMENT` Matrix
-- Path traceは元・現在の通信アドレス範囲、protocol、送信元/宛先port、IP family、stateを保持し、各hopのinterface/zoneとは分離してPolicyを評価します。Source IP / Destination IPは任意で指定でき、省略時は選択Segmentの範囲を評価します。指定IPは選択Segment内・同一familyに限ります。APIの追加引数は`source_ip` / `destination_ip`、結果と各stepの`flow.original` / `flow.current`に通信情報を返します。
-- 対応するNATは宛先変換→経路検索→Policy評価→送信元変換の順に適用し、変換後の通信情報を次の機器へ渡します。NATを含むECMPも経路ごとに通信情報を分離して評価します。宛先範囲が経路条件をまたぐ場合はPARTIALとなり、Destination IPの指定が必要です。詳細は下記「NATを含むPath trace」を参照してください。
-- ヘッダーの月／太陽アイコンでライト・ダークモードを切り替えられます。初回はOS設定に追従し、手動選択はブラウザへ保存して再読み込み後や別タブにも反映します。
-- Matrixセル詳細とRule trace
-- Device / Policy / Parser Debug / Capability画面
-- Device詳細（Interface、VLAN、Zone、Route、Policy、NAT、Warning、Unsupported）
-- Password / Secret / SNMP Communityの保存・表示時マスク
-- Snapshot単位のSQLite保存
-- Snapshot間の通信可否／Policy／Interface・VLAN・Zone Diff（新規ALLOW優先表示）
-- Device・SegmentのTopology Graph（同一サブネット接続は `INFERRED` と明示）
-- Source / Destination / IP family / Protocol / Source Port / Destination Port指定の複数機器Path探索とhop単位Policy trace
-- 経路なしを `NO_ROUTE`、Policy根拠不足を `UNKNOWN` として分離
-- 複数ファイル・フォルダ・ZIP import、機器ごとのconfig貼り付け、検出プレビュー、OS手動補正、部分失敗表示
-- Site/Device/Vendor/OS/Zone/VLAN/Segment/Protocol/Port Matrix filterとPolicy filter
-- Secretマスク済みCanonical JSON Export
-- Docker Compose、Parser契約/Golden Test、API end-to-end test、Playwright実ブラウザE2E、GitHub Actions CI
-
-物理・動的経路情報の取込、Batfish連携、各OSの高度な独自構文は拡張対象です。未解釈のセキュリティ構文はParser Debugで確認できます。
-
-## Architecture
-
-```text
-Config files
-   ↓
-Parser Registry ── detect(): 0.0 .. 1.0
-   ↓
-Network OS Parser Plugin
-   ↓
-CanonicalConfig
-   ├── Device / Interface / VLAN / Zone / Segment
-   ├── Route / Policy / NAT
-   └── Trace / Warning / Unsupported
-   ↓
-Static Policy Analyzer
-   ├── Policy utilities ── Segment Matrix / Snapshot Diff
-   └── Topology Graph
-       └── Routing → Policy Engine → NAT → typed ReachabilityResult
-   ↓
-FastAPI ── SQLite snapshots ── React UI
+```bash
+docker compose down
 ```
 
-AnalyzerとUIはベンダー固有構文を参照しません。ZoneがないOSもSegmentへ正規化されます。Path Traceは`routing.py`、`policy_engine.py`、`nat.py`、`reachability.py`へ責務を分離し、API結果はPydantic modelで検証します。React UIもMatrix、Topology、Diff、Device、Policy、Importを独立componentとして構成します。
+更新を反映する場合は、再び `docker compose up -d --build` を実行します。**Parserの修正を既存Snapshotへ反映するには、元のconfigを再Importしてください。** 保存済みモデルは起動時に自動で再解析されません。
+
+## 使い方
+
+### 1. Configを取り込む
+
+**Config Import** では、単一・複数ファイル、フォルダ、ZIP、機器ごとのテキスト貼り付けに対応しています。
+
+1. configを選択し、検出プレビューを確認します。
+2. 機器ごとのNetwork OSを確認します。自動検出が不確かな場合は手動で指定できます。
+3. 必要に応じてSiteを入力し、Importします。
+4. デバイス詳細や **Parser Debug** でWarning・Unsupportedと設定行を確認します。複数ファイルの一部が失敗した場合も、結果を個別に表示します。
+
+1回のImportをSnapshotとして保存します。通常の一覧・解析画面は最新Snapshotを使用し、過去のSnapshotは **Snapshot Diff** や `snapshot_id` を指定したAPIで参照できます。
+
+### 2. ポリシーマトリクスで全体を見る
+
+送信元・宛先Segmentの組み合わせを一覧表示します。Site、Device、Vendor、OS、Zone、VLAN、Segmentで絞り込み、セルを選ぶと判定理由とRule traceを確認できます。
+
+| 通信条件 | 評価内容 |
+|---|---|
+| Protocol・Portとも未指定 | 設定ルールの概要。表示サービスは経路全体の通信保証ではありません |
+| ProtocolまたはPortを指定 | Path traceと同じ経路・Policy・NAT・ECMP評価で再計算 |
+| Portだけ指定 | TCP・UDP・SCTPを個別に評価し、結果が異なる場合はPARTIAL |
+
+条件指定時はSegment全体のアドレス範囲を対象に、新規通信・送信元port未指定で評価します。ポート範囲、`any`、ルール順序、暗黙deny、jump、未解決条件を扱い、単なる文字列検索は行いません。Snapshot Diffの通信差分は、条件未指定の設定概要に基づきます。
+
+### 3. Topology / Pathで特定通信を調べる
+
+Source / DestinationのSegmentを選び、IP family、Protocol、Portなどを指定して **経路を解析** を実行します。
+
+- Source IP / Destination IPを省略すると、選択Segmentのアドレス範囲を評価します。指定するIPは選択Segment内・同一IP familyに限ります。
+- Source port、connection state、ICMP typeも指定できます。IPv4のping要求はtype 8、応答はtype 0です。
+- `established` / `related` は実セッションを取得できないため通常UNKNOWNです。既存セッションがある前提で調べる場合は **既存セッションを仮定** を選びます。
+- 各hopの入口・出口、適用Policy、next-hop、NAT変換前後、根拠となる設定行を表示します。
+- 複数経路がある場合は、候補ごとの判定を表示します。経路を選ぶと、経路図の強調とhop・NAT結果が切り替わります。
+
+Topologyの機器間リンクは、config内のサブネット重複から推定した `INFERRED` 接続です。物理配線を表すものではありません。
+
+### その他の画面
+
+| 画面・操作 | 内容 |
+|---|---|
+| デバイス | Interface、VLAN、Zone、Route、Policy、NAT、Warning、Unsupportedの詳細 |
+| ポリシー | 共通モデルへ変換したルールの一覧と絞り込み |
+| Snapshot Diff | 通信判定・Policy・Interface・VLAN・Zoneの差分。新規ALLOWを優先表示 |
+| Parser Debug | 解析モデルと診断情報の確認、マスク済みCanonical JSONのExport |
+| 対応状況 | Parserごとの対応機能 |
+| ヘッダーのテーマ切替 | ライト／ダーク切替。初回はOS設定に追従し、手動選択はブラウザに保存 |
+
+サイドバーは開閉でき、狭い画面でも操作できます。
+
+## 判定の意味
+
+| 判定 | 意味 |
+|---|---|
+| `ALLOW` | 指定条件が、評価した経路・ルールで許可される |
+| `DENY` | 適用Policyで拒否される |
+| `PARTIAL` | 範囲や経路によって結果が異なる、未評価条件が残る、または探索を打ち切った |
+| `UNKNOWN` | 経路・Policy・セッションなどの根拠が不足し、判定できない |
+| `NO_ROUTE` | 設定と推定Topologyから宛先への経路を構成できない。Policyの拒否とは区別する |
+| `SAME_SEGMENT` | 同一Segment。L2での到達性や実サービスの稼働を保証するものではない |
+
+条件未指定のMatrixでは設定ルールの概要として読み、特定通信の確認には条件付きMatrixまたはPath traceを使ってください。未解決オブジェクトや未対応条件を、無条件の許可として扱いません。
+
+## 解析の対応範囲
+
+### 経路・ECMP
+
+connected/static routeの最長プレフィックス一致とmetricを使い、同順位の候補を個別に評価します。同じ出口の複数next-hop、複数出口、recursive next-hop、IPv6 scoped next-hop、VRF、blackhole / reject / unreachableを扱います。
+
+経路が途中で合流しても、各経路のPolicy履歴とNAT後の通信情報は独立して保持します。待機経路は同順位のECMP候補に混ぜません。VyOSではnext-hop／Interfaceごとのdistance、disable、distance 255を反映します。distance未指定の比較値は通常1、FortiOSでは10です。
+
+全候補の判定が同じならその判定を返し、異なる場合はPARTIALに集約します。ループや未解決next-hopも結果に残します。探索は128経路・2,048状態・32 hopを上限とし、再帰next-hopにも回数・深さの上限を設けています。上限到達時はPARTIALとし、未評価候補があることを表示します。
+
+宛先範囲内でstatic routeの条件が変わる場合は、範囲を分割せずPARTIALを返します。Destination IPで対象を絞ってください。動的ルーティングの実RIB、PBRの未対応match、SD-WAN固有の選択条件、実機のECMPハッシュ・分配率は再現しません。
+
+### NAT
+
+**入力するIP・portはNAT前の値です。** DNATでは公開VIPを含むSegmentとDestination IPを指定します。変換後の宛先へ経路を引き直すため、結果の到達Segmentが選択したSegmentと異なる場合があります。
+
+| Network OS | 経路評価で対応する処理順 |
+|---|---|
+| VyOS / RouterOS | DNAT → 経路検索 → forward Policy → SNAT |
+| Junos SRX | static/destination NAT → 経路検索 → Policy → reverse static/source NAT |
+| FortiOS | 選択されたPolicyに付随するSNAT |
+
+単一IP・portへの変換、NAT除外、ルール順序、Interface・IP family・Protocol・port条件、SRXの同じprefix長のstatic NATと逆方向マッピングを扱います。Policyで拒否した通信にSNATは適用しません。ECMPでも経路ごとに変換結果を保持します。
+
+複数pool、範囲割り当て、部分一致、未解決object、未対応条件はPARTIALとして扱います。動的PATでは送信元portを未確定として引き継ぎ、PARTIALにします。外側InterfaceのIPが不明なmasqueradeも断定しません。
+
+PAN-OS、Cisco IOS/ASA/FTD、YamahaのNAT処理順、FortiOS VIP/central NAT/IP pool、単一ルールのtwice NAT、複数SRX rule-setの優先関係、条件付きstatic NAT逆変換、NAT64、poolごとの分岐、実セッションに基づく戻り通信は未対応です。**NAT設定を読み取れることと、その変換を経路上で実行評価できることは別です。** 処理順が未対応の機器でNATを含む経路はPARTIALになります。
+
+### VyOSの機器自身宛て・機器発通信
+
+Interface・loopbackのIPから、VRFごとに「LOCAL · 機器自身」（local-zoneがあればその名前）を作ります。機器自身宛てはDestination、機器発通信はSourceで選択し、必要に応じてIPを絞ります。通常のSegmentを選んでも、Destination IPがその機器自身のIPならinputとして評価します。
+
+input / output / forward、base/custom chain、jump/default-jump、local-zone、IPv4/IPv6ごとのzone既定動作を分けて評価します。同じrulesetの複数zone pairへの適用も保持します。未定義rulesetや未解決Firewall GroupはPARTIALとし、参照名と設定行を診断情報に残します。
+
+DNAT後の機器自身宛てはinputで評価します。機器発通信はprerouting DNATを通さず、outputの後にSNATを適用します。実サービスの待受、実セッション、機器内ループバック通信は確認しません。IP不明のlocal endpointはUNKNOWNです。
+
+### AlliedWare PlusのVLAN hardware filter
+
+`access-list hardware` → `vlan access-map` / `match access-group` → `vlan filter ... vlan-list ... input` の適用関係を解析します。VLANの範囲・カンマ指定、同じACLの複数VLANへの適用、ルール順序、ICMP typeを保持します。未一致時は通常転送として扱い、管理用standard ACLを中継VLANへ自動適用しません。
+
+未定義access-map/ACL、未対応map条件、port/global/QoSフィルターとの併用は警告とPARTIALで扱います。VLAN ACLが適用されていない方向、同一VLAN内のL2経路、管理プレーンのアクセス制御は対象外です。
+
+### Configを読み込めるNetwork OS
+
+以下は主な**読み取り対象**です。すべての構文・OSバージョンや実機動作を網羅するものではありません。通信判定の範囲は上記の説明と、画面のWarning・Unsupportedを併せて確認してください。
+
+| Network OS | 主な読み取り対象 |
+|---|---|
+| Cisco IOS / IOS-XE | Interface、VLAN、IPv4/IPv6 ACLとbinding、static route、static/PAT NAT |
+| Cisco NX-OS | Ethernet/SVI、VLAN、IPv4/IPv6 ACLとbinding、static route |
+| Cisco ASA / FTD | Interface/nameif、Zone、Network Object、extended ACL、access-group、static route、object/manual NAT |
+| Juniper Junos / SRX | set・階層形式、Interface、VLAN、Zone、Address Book/Set、Policy、application、static route、NAT |
+| Yamaha RTX | Interface、802.1Q VLAN、IPv4/IPv6 Filterとbinding、static route、NAT descriptor |
+| Fortinet FortiOS | Interface、VLAN、Zone、Address/Service Object・Group、Policy、static route、Policy NAT |
+| Palo Alto PAN-OS | set形式・vsys scope、Interface、Zone、Address/Service Object・Group、Policy、Application、static route、NAT Policy |
+| HPE Aruba AOS-CX | Interface、VLAN/SVI、IPv4/IPv6 ACL、apply access-list、static route |
+| Arista EOS | Interface、VLAN/SVI、IPv4/IPv6 ACL、ip access-group、static route |
+| AlliedWare Plus | Interface、VLAN/IP interface、software/hardware ACL、VLAN hardware filter、static route |
+| VyOS | set・1.4.x階層形式、Interface/VIF、Zone/local、Firewall chain・Group・state、static/ECMP/terminal route、NAT |
+| ExtremeXOS / VOSS | VLAN/SVI、IPv4 address、static route、基本ACL |
+| MikroTik RouterOS | VLAN/Interface、Address List、Firewall Filter、static route、source/destination NAT |
+
+## 保存・セキュリティ
+
+configの解析と保存はローカルで行い、configを外部の解析サービスへ送信しません。Password・Secret・SNMP Communityの既知パターンはSnapshot保存前とCanonical JSON Export時にマスクします。独自の資格情報構文は検出できない場合があります。なお、UIのWebフォントはGoogle Fontsを参照します。
+
+認証・RBACは未実装です。リモートで利用する場合は認証付きReverse Proxyを配置し、SQLite volumeへのアクセスを制限してください。Importの上限は1ファイル20 MiB、1回500ファイル、ZIP展開後50 MiBです。詳細と脆弱性の報告方針は [SECURITY.md](SECURITY.md) を参照してください。
 
 ## ローカル開発
+
+CI・コンテナで使用しているバージョンはPython 3.12、Node.js 22です。以下の各手順は、リポジトリのルートから開始します。
 
 Backend:
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
 cd backend
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Frontend（別ターミナル）:
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm ci
+npm run dev -- --host 127.0.0.1
 ```
 
-Vite: [http://localhost:5173](http://localhost:5173)、API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+UIは [http://localhost:5173](http://localhost:5173)、API仕様は [http://localhost:8000/docs](http://localhost:8000/docs) で確認できます。Viteは `/api` をポート8000へ転送します。Backendの保存先は `DATABASE_PATH` で変更でき、省略時は起動ディレクトリからの `./data/netpolicy.db`（上記手順では `backend/data/netpolicy.db`）です。
 
-## API
+### テスト
 
-| Method | Endpoint | 用途 |
-|---|---|---|
-| POST | `/api/configs/import` | Config / ZIP import |
-| POST | `/api/configs/detect` | Network OS検出候補 |
-| POST | `/api/configs/preview` | 複数Configの検出プレビュー |
-| GET | `/api/devices` | Device一覧 |
-| GET | `/api/devices/{id}` | Canonical device detail |
-| GET | `/api/policies` | 共通Policy一覧 |
-| GET | `/api/matrix` | Segment Matrix |
-| GET | `/api/matrix/{src}/{dst}` | セル根拠 |
-| GET | `/api/parser/debug` | Canonical JSON |
-| GET | `/api/parser/warnings` | Parser Warning / Unsupported一覧 |
-| GET | `/api/parser/capabilities` | 対応機能一覧 |
-| GET | `/api/snapshots` | Import履歴 |
-| GET | `/api/diff?before={id}&after={id}` | Snapshot間Diff |
-| GET | `/api/topology` | Device / Segment Topology |
-| GET | `/api/reachability?src={id}&dst={id}&protocol=tcp&port=443` | 複数機器Path解析 |
-
-`/api/matrix?protocol=tcp&port=22` のようにプロトコルとポートで絞り込めます。
-
-## Parser Plugin追加
-
-1. `backend/app/parsers/` に `BaseConfigParser` の実装を追加
-2. `parser_id` と `ParserCapabilities` を宣言
-3. `detect()` と `parse()` を実装
-4. `@ParserRegistry.register` を付与
-5. `backend/app/parsers/__init__.py` でmoduleをimport
-6. fixtureとGolden Testを追加
-
-Canonical Model、Analyzer、UIの変更は原則不要です。
-
-## Test
+Backendは仮想環境を有効にしたターミナルで、リポジトリのルートから実行します。
 
 ```bash
 cd backend
 python -m pytest -q
+```
 
-cd ../frontend
+Frontendもリポジトリのルートから実行します。Playwrightのブラウザを初回にインストールします。
+
+```bash
+cd frontend
+npm ci
+npx playwright install chromium
 npm run build
 npm run test:e2e
 ```
 
-## Security / limitations
+LinuxでブラウザのOS依存ライブラリも必要な場合は、CIと同じ `npx playwright install --with-deps chromium` を使用します。GitHub ActionsではBackendテスト、Frontendビルド・Playwright E2E、`docker compose build` を実行します。
 
-- 実機接続、Config Push、自動修正は行いません。
-- configは外部サービスへ送信しません。
-- Topologyの機器間リンクは設定内サブネットの重複から推定し、物理配線を保証しません。
-- Path Traceはconnected/static routeの最長一致、recursive next-hop、blackhole/reject、IPv6 scoped next-hop、VRF、ACL/zone/global chain、指定したconnection stateとIP familyを評価します。同じ最長プレフィックス・最小metricのECMP候補を個別に評価し、全経路の結果を集約します。PBRのmatchや動的ルーティングの実RIBが必要な場合は推測でALLOWにせず `UNKNOWN` を返します。
-- 一致したNAT ruleと変換値、評価順、条件評価の確度はPath Traceに表示します。Rule順序、Interface、IP family、Protocol、Source/Destination Portを評価しますが、実セッションテーブルや時刻・ユーザー・URL categoryなどconfig外のランタイム条件は再現しません。`established` / `related` は実セッションの存在を確認できないため通常は `UNKNOWN` とし、画面で「既存セッションを仮定」を明示した場合だけstateful sessionとして評価します。
-- 未解決オブジェクトや適用関係が曖昧な場合は `UNKNOWN` を優先します。
-- Password / Secret / SNMP CommunityはSnapshot保存前とJSON Export時にマスクします。未登録の独自資格情報構文には対応しないため、本番ではホスト側のvolume権限も制限してください。
-- 認証・RBACは未実装です。Composeは`127.0.0.1:8080`だけにbindします。リモート公開時は認証付きReverse Proxyを必須としてください。詳細は[SECURITY.md](SECURITY.md)を参照してください。
-- Uploadは1ファイル20 MiB、1回500ファイル、ZIP展開後50 MiBに制限しています。
+## API
 
-Apache License 2.0。詳細は[LICENSE](LICENSE)を参照してください。
+Snapshotに対する読み取りAPIは、`snapshot_id` を省略すると最新Snapshotを使います。実際のIDは一覧APIで取得してください。完全な引数・スキーマは開発用APIの `/docs` で確認できます。
 
+| Method | Endpoint | 用途 |
+|---|---|---|
+| GET | `/api/health` | ヘルスチェック |
+| POST | `/api/sample/load` | サンプルSnapshot作成 |
+| POST | `/api/configs/detect` | 単一configのNetwork OS候補 |
+| POST | `/api/configs/preview` | 複数configの検出プレビュー |
+| POST | `/api/configs/import` | config / ZIPのImportとSnapshot作成 |
+| GET | `/api/snapshots` | Snapshot一覧 |
+| GET | `/api/devices`、`/api/devices/{device_id}` | 機器一覧・詳細 |
+| GET | `/api/policies` | 共通Policy一覧 |
+| GET | `/api/matrix`、`/api/matrix/{src}/{dst}` | Matrix・セル根拠 |
+| GET | `/api/topology` | Device / SegmentのTopology |
+| GET | `/api/reachability` | 経路・Policy・NAT・ECMP解析 |
+| GET | `/api/diff?before={id}&after={id}` | Snapshot間Diff |
+| GET | `/api/parser/debug` | Canonical Model |
+| GET | `/api/parser/warnings` | Warning / Unsupported |
+| GET | `/api/parser/capabilities` | Parser対応機能 |
 
-### AlliedWare Plus VLAN hardware filter
+Matrixは `/api/matrix?protocol=tcp&port=443` のように条件を指定します。レスポンスの `evaluation` は条件指定時に `path`、未指定時に `policy_summary` です。Portは0〜65535で、ICMPなどportを使わないProtocolとの併用はできません。
 
-- `access-list hardware` → `vlan access-map` / `match access-group` → `vlan filter ... vlan-list ... input` の関連付けを解析します。VLAN一覧の範囲・カンマ指定、同じACLの複数VLANへの適用を保持します。
-- ハードウェアACLは設定順（明示sequenceがある場合はsequence順）に評価し、未一致時は通常転送として扱います。`access-list 10`等の管理用standard ACLは中継VLANへ自動適用しません。
-- Path traceのICMP選択時にtypeを指定できます。IPv4のping要求は8、応答は0です。type未指定でtype条件付きルールに一致する可能性がある場合はPARTIALです。APIは`icmp_type`（0〜255）を受け取ります。
-- 条件未指定のMatrixはセグメント全体・全サービスの設定概要です。DNS、DHCP、ICMP typeなどの例外と拒否が混在すればPARTIALになります。特定通信はPath traceでIP・port・ICMP typeを指定してください。
-- 未定義access-map/ACL、未対応map条件、port/global/QoSフィルターとの併用は警告とPARTIALで扱います。VLAN ACLが適用されていない方向、同一VLAN内のL2経路、管理プレーンのアクセス制御は今回の判定対象外です。既存Snapshotにはconfigの再importが必要です。
-- 検証根拠：[x540L 5.5.5公式リファレンス：ハードウェアパケットフィルター](https://www.allied-telesis.co.jp/support/list/awp/rel/5.5.5-2.1/613-003277_L/docs/overview-30.html)。実機の稼働状態・OSバージョン固有の差異は別途確認が必要です。
+Path解析は `src` / `dst` にSegment IDを指定し、`protocol`、`port`、`source_port`、`ip_version`、`source_ip`、`destination_ip`、`state`、`assume_session`、`icmp_type` を必要に応じて渡します。
 
+| Pathレスポンス | 内容 |
+|---|---|
+| `result` | 候補経路を集約した判定 |
+| `paths` | 経路ごとの判定、path、steps、flow、理由 |
+| `paths_complete` | 探索上限による打ち切りがないか。実ネットワーク全体の把握を意味しない |
+| `path` / `steps` / `flow` | 互換用の先頭経路。複数候補全体を表さない |
+| `flow.original` / `flow.current` | 元の通信情報／当該経路の最終通信情報。各hopのflow.currentはPolicy評価時点 |
+| hopの `packet_in` / `packet_out` | 受信時／処理後の通信情報 |
+| NAT効果の `before` / `after` / `applied` | 変換前後と適用の有無 |
 
-### NATを含むPath trace
+Importはmultipartの `files`（複数可）、任意の `snapshot_name`、ファイル名をキーにしたJSON文字列の `parser_ids` / `sites` を受け取ります。検出APIのみ単一の `file` を使用します。
 
-- **入力はNAT前**の送信元・宛先です。公開VIPを含むSegmentをDestinationに選び、そのVIPをDestination IPに指定します。DNAT後は実際の宛先ネットワークまで探索するため、表示する到達Segmentは選択したSegmentと異なる場合があります。
-- 対応する処理順: VyOS / RouterOSのDNAT→routing→forward policy→SNAT、SRXのstatic/destination NAT→routing→policy→reverse static/source NAT、FortiOSの選択されたPolicyに付随するSNAT。
-- 単一IP・portへの変換、NAT除外、順序・interface・protocol・port条件、SRXの同じprefix長のstatic NATと逆方向マッピングを扱います。DNATとSNATを別ルールで併用した通信にも対応します。SNATはローカルPolicy評価後に適用します。
-- `flow.original`は入力を保持します。結果の`flow.current`は最終通信、各hopの`flow.current`はPolicy評価時の通信です。各hopの`packet_in` / `packet_out`、NAT効果の`before` / `after` / `applied`に受信・転送・実適用の根拠を返します。Policyで拒否した通信にSNATは適用しません。
-- 複数pool・範囲割り当て、未解決object、部分一致、未対応条件はPARTIALで停止し、後続の許可ルールへ落としません。動的PATは送信元portを未確定（null）として伝搬し、全体をPARTIALとします。DHCP等で外側interfaceのIPが不明なmasqueradeも断定しません。
-- **未対応**: PAN-OS、Cisco IOS/ASA/FTD、YamahaのNAT処理順、FortiOS VIP/central NAT/IP pool、単一ルールでのtwice NAT、複数SRX rule-setの優先関係、条件付きstatic NAT逆変換、NAT64、poolごとの候補分岐、実セッションに基づく戻り通信。NAT処理順が未対応の機器は、NATルールがある経路をPARTIALとします。
-- 既存Snapshotの旧NATモデルは再取り込みが必要です。旧モデルから失われた条件を推測して実行しません。ProtocolまたはPortを指定したMatrixにも、Path traceと同じNATパイプラインを適用します。条件未指定のMatrixは設定ルールの概要です。
-- 処理順の根拠: [VyOS NAT44](https://docs.vyos.io/en/1.4/configuration/nat/nat44.html)、[SRX NAT overview](https://www.juniper.net/documentation/us/en/software/junos/nat/topics/topic-map/security-nat-overview.html)、[RouterOS packet flow](https://help.mikrotik.com/docs/spaces/ROS/pages/328227/Packet%2BFlow%2Bin%2BRouterOS)、[FortiOS fixed port](https://docs.fortinet.com/document/fortigate/6.2.1/technical-note-fixed-port-on-firewall-policy/12/fd40732)。[PAN-OSはPolicyにNAT前アドレス・NAT後zoneを用いる](https://docs.paloaltonetworks.com/ngfw/networking/nat/nat-policy-rules)ため、他OSの処理順を流用しません。
+## 内部構成とParser追加
 
+```text
+Config → Parser Registry → Network OS Parser → CanonicalConfig
+                                                 ├─ 設定概要Matrix / Snapshot Diff
+                                                 └─ Topology / 経路別探索
+                                                     DNAT → routing → Policy → SNAT
+                                                          ↓
+                                                  ReachabilityResult
+                                                          ↓
+                                                FastAPI → React UI
 
-### VyOSの機器自身宛て・機器発通信
+SnapshotStore → マスク済みconfig・Canonical ModelをSQLiteへ保存
+```
 
-- configを再importすると、Path traceのSource / Destinationに「LOCAL · 機器自身」（local-zoneがあればその名前）が追加されます。ネットワーク範囲ではなく、設定されたinterface・loopbackのIPをIPv4 /32・IPv6 /128として保持します。VRFごとに分離します。
-- 機器自身宛てはDestination、機器発通信はSourceで「機器自身」を選びます。複数IPがある場合はSource IP / Destination IPで絞れます。通常のSegmentを選んでも、Destination IPがその機器自身のアドレスならinputとして評価します。
-- input / output / forwardを分離し、対応するbase chainとlocal-zoneのルールを評価します。同じrulesetを複数zone pairに適用した設定を保持し、IPv4 / IPv6それぞれにzone既定動作を適用します。未定義rulesetはPARTIALです。
-- DNAT後に機器自身へ到達する通信はinputで評価します。機器発通信はprerouting DNATを通さず、output評価後にSNATを適用します。local endpointから物理リンクは推定しません。
-- 実サービスの待受状態、実セッション、機器内のループバック通信は確認しません。IP不明のlocal endpointはUNKNOWNです。旧Snapshotは再importが必要です。
-- 仕様根拠: [VyOS 1.4 Firewall](https://docs.vyos.io/en/1.4/configuration/firewall/)、[Zone Based Firewall](https://docs.vyos.io/en/1.4/configuration/firewall/zone.html)。
+| 場所 | 役割 |
+|---|---|
+| `backend/app/parsers/` | Network OS検出・構文解析・設定行のTrace |
+| `backend/app/models.py` | Device、Segment、Route、Policy、NATなどの共通モデル |
+| `backend/app/analyzer.py` / `matrix_query.py` | 設定概要／通信条件付きMatrix |
+| `backend/app/reachability.py` / `nat_path.py` | 入力の解決と、NAT有無に共通の経路探索・集約 |
+| `backend/app/routing.py` / `policy_engine.py` / `nat_pipeline.py` | 経路候補、Policy、NATの評価 |
+| `backend/app/reachability_models.py` | APIに返す経路・通信情報の型 |
+| `backend/app/storage.py` / `main.py` | SQLite保存・API |
+| `frontend/src/` | React画面・APIクライアント・テーマ |
 
+Parserを追加する場合は、`BaseConfigParser` を実装し、`parser_id`、`ParserCapabilities`、`detect()`、`parse()` を定義します。`@ParserRegistry.register` を付け、`parsers/__init__.py` でimportし、fixture・契約テスト・Golden Testを追加してください。共通モデルに既存の意味を表現できる場合は、AnalyzerやUIの変更は原則不要です。新たな処理順や条件を扱う場合は評価側の対応も必要です。
 
-### Matrixの通信条件評価
+## 仕様確認に使った資料
 
-- ProtocolまたはPortを指定すると、Path traceと同じ経路・Policy・NAT解析でセルを再計算します。文字列検索ではないため、`443`を`8443`と取り違えず、`any`、ポート範囲、ルール優先順位、暗黙deny、jump、未解決条件を評価します。
-- 評価範囲は選択Segmentの全アドレス、新規通信、送信元port未指定です。Protocolだけの場合は宛先portも未指定で、ポート条件に一部だけ一致する場合はPARTIALです。未解決の条件やIP familyの曖昧さはPath traceと同じくPARTIAL / UNKNOWNを保持します。特定IP、送信元port、IP family、既存セッションの仮定はPath traceで指定してください。
-- Portだけの指定はTCP・UDP・SCTPを個別に評価し、結果が異なる場合はPARTIALです。Portは0〜65535の整数です。ICMPなどportを使わないprotocolとの併用、不正なprotocolやportは422で拒否します。
-- 経路なしはNO_ROUTEとしてPolicyのDENYと区別します。セル詳細には評価条件・理由・各chainの結果を表示し、条件指定時のALLOW / DENYラベルは経路全体の判定が確定した通信だけに付けます。NATがある場合の条件はNAT前です。
-- `/api/matrix?protocol=tcp&port=443` と `/api/matrix/{src}/{dst}?protocol=tcp&port=443` は同じ条件を評価します。レスポンスの`evaluation`は条件指定時`path`、未指定時`policy_summary`です。
-- 条件未指定は従来の設定ルール概要を表示し、画面上でも通信保証との違いを明記します。Snapshot Diffもこの概要に基づきます。ECMPもPath traceと同じ集約結果になり、Rule traceに経路番号・経路の判定・next-hopを表示します。動的経路などの既存制約は引き続き適用されます。
+- [VyOS 1.4 Firewall](https://docs.vyos.io/en/1.4/configuration/firewall/)、[Zone](https://docs.vyos.io/en/1.4/configuration/firewall/zone.html)、[Static routing](https://docs.vyos.io/en/1.4/configuration/protocols/static.html)、[NAT44](https://docs.vyos.io/en/1.4/configuration/nat/nat44.html)
+- [SRX NAT overview](https://www.juniper.net/documentation/us/en/software/junos/nat/topics/topic-map/security-nat-overview.html)、[RouterOS packet flow](https://help.mikrotik.com/docs/spaces/ROS/pages/328227/Packet%2BFlow%2Bin%2BRouterOS)
+- [FortiOS fixed port](https://docs.fortinet.com/document/fortigate/6.2.1/technical-note-fixed-port-on-firewall-policy/12/fd40732)、[Routing concepts](https://docs.fortinet.com/document/fortigate/7.2.10/administration-guide/139692/routing-concepts)
+- [Cisco administrative distance](https://www.cisco.com/c/en/us/support/docs/ip/border-gateway-protocol-bgp/15986-admin-distance.html)、[PAN-OS NAT Policy](https://docs.paloaltonetworks.com/ngfw/networking/nat/nat-policy-rules)
+- [AlliedWare Plus x540L 5.5.5 ハードウェアパケットフィルター](https://www.allied-telesis.co.jp/support/list/awp/rel/5.5.5-2.1/613-003277_L/docs/overview-30.html)
 
-### ECMP・複数経路
+## ライセンス
 
-- 同じ出口Interfaceの複数next-hop、複数出口、recursive next-hop、IPv6 scoped next-hop、VRFを扱います。経路が途中で合流しても、各経路のPolicy・NAT・通信情報は独立して保持します。低い優先順位の待機経路はECMP候補に含めません。
-- 全候補がALLOWならALLOW、全候補がDENYならDENY、全候補がNO_ROUTEならNO_ROUTE、全候補がUNKNOWNならUNKNOWNです。判定が混在する場合はPARTIALです。ループや未解決のnext-hopも候補から落とさず、不明な経路として残します。
-- APIの `paths` に各経路の判定・hop・NAT変換後の通信情報を返します。`paths_complete` は探索を打ち切っていないことを示します。従来のトップレベル `path` / `steps` / `flow` は先頭経路の互換表示であり、全候補を表しません。
-- Topology / Pathでは経路を選んで詳細を切り替えられます。ProtocolまたはPortを指定したMatrixも同じ経路評価を使います。
-- 探索上限は128経路・2,048状態・32 hopです。再帰next-hopも探索回数と深さを制限し、上限到達時は `paths_complete=false` / PARTIALにします。未評価の候補を許可扱いにはしません。
-- VyOSではnext-hop／Interfaceごとのdistance、disable、distance 255を反映します。仕様は[VyOS 1.4 static routing](https://docs.vyos.io/en/1.4/configuration/protocols/static.html)に基づきます。既存Snapshotには再Importで新しい解析情報を取り込んでください。
-- distance未指定の比較には通常1、FortiOSでは10を用います（[Cisco](https://www.cisco.com/c/en/us/support/docs/ip/border-gateway-protocol-bgp/15986-admin-distance.html)、[FortiOS](https://docs.fortinet.com/document/fortigate/7.2.10/administration-guide/139692/routing-concepts)）。SD-WAN固有の経路選択など、共通モデルに取り込めていない条件は対象外です。
-- 実機が選ぶECMPハッシュ、経路ごとの分配率、動的ルーティングの実RIB、リンク稼働状態は評価対象外です。接続は引き続きsubnet重複からの推定です。宛先範囲内で経路条件が変わる場合は、範囲の分割を行わずPARTIALを返します。
+[Apache License 2.0](LICENSE)
