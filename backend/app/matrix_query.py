@@ -42,6 +42,7 @@ def build_query_matrix(
             if destination is not None and dst.id != destination:
                 continue
             results, reasons, allowed, denied, traces, policy_ids = [], [], [], [], [], []
+            ranges = []
             for transport in protocols:
                 label = f"{transport.upper()}/{port}" if port is not None else f"{transport.upper()}/ANY"
                 result = analyze_reachability(configs, src.id, dst.id, transport, port, topology=topology, include_topology=False)
@@ -53,6 +54,10 @@ def build_query_matrix(
                 reason = result["route_reason"] or " / ".join(step["reason"] for step in result["steps"])
                 reasons.append(f"{label}: {reason or result['result']}")
                 for index, path in enumerate(result.get("paths") or [result], 1):
+                    if path.get("destination_ranges"):
+                        ranges.append({"addresses": path["destination_ranges"], "result": path["result"],
+                                       "protocol": transport, "path_index": index,
+                                       "reason": path.get("route_reason")})
                     for step in path["steps"]:
                         for verdict in step["chains"] or [step]:
                             policy = policies.get(verdict.get("policy"))
@@ -72,6 +77,6 @@ def build_query_matrix(
                 source=src.id, destination=dst.id, result=verdict, evaluation="path",
                 query=" + ".join(f"{p.upper()}/{port if port is not None else 'ANY'}" for p in protocols),
                 reason="; ".join(reasons), allowed=allowed, denied=denied,
-                policy_ids=list(dict.fromkeys(policy_ids)), traces=traces,
+                policy_ids=list(dict.fromkeys(policy_ids)), traces=traces, destination_ranges=ranges,
             ))
     return cells

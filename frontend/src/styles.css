@@ -213,3 +213,9 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 .path-options button small { grid-column: 1 / -1; color: var(--muted); overflow-wrap: anywhere; }
 .path-limit { display: flex; align-items: flex-start; gap: 8px; line-height: 1.6; }
 .path-limit svg { flex-shrink: 0; width: 18px; margin-top: 3px; }
+
+.destination-ranges { margin-block: 1rem; max-height: 24rem; overflow: auto; }
+.destination-ranges > div { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .75rem 0; border-bottom: 1px solid var(--line); }
+.destination-ranges code { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.destination-ranges small { flex-basis: 100%; overflow-wrap: anywhere; }
+.path-options small { overflow-wrap: anywhere; min-width: 0; }

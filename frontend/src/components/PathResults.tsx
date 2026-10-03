@@ -48,6 +48,7 @@ export function PathResults({ result, pathIndex, onSelectPath, nodeById }: Props
             <button type="button" key={index} aria-pressed={pathIndex === index}
               onClick={() => onSelectPath(index)} aria-label={`経路 ${index + 1}: ${path.result}`}>
               <span>経路 {index + 1}</span><Status value={path.result} />
+              {!!path.destination_ranges?.length && <small>宛先: {path.destination_ranges.join(", ")}</small>}
               <small>{path.steps.map(step => nodeById[`device:${step.device}`]?.label || step.device).join(" → ") || "経路不明"}</small>
             </button>
           ))}

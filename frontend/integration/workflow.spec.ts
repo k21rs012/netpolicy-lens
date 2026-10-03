@@ -50,5 +50,21 @@ test("実API: Import・保存・Matrix・Path・再Import・Diff・Exportを通�
   const exported = readFileSync((await download.path())!, "utf8");
   expect(JSON.parse(exported).device.site).toBe("Integration Lab");
   expect(exported).not.toContain("synthetic-test-community");
+  // A more-specific route with an unreachable gateway partitions the subnet end to end.
+  await importConfig(page, original + "\nip route 10.0.9.128 255.255.255.128 192.0.2.99\n", "ranges");
+  await page.getByRole("button", { name: "Topology / Path" }).click();
+  await page.getByLabel("Source", { exact: true }).selectOption("audit-vlan-10");
+  await page.getByLabel("Destination", { exact: true }).selectOption("audit-vlan-20");
+  await page.getByRole("button", { name: "経路を解析" }).click();
+  await expect(page.getByRole("button", { name: "経路 1: ALLOW", exact: true })).toContainText("10.0.9.0/25");
+  await page.getByRole("button", { name: "経路 2: NO_ROUTE", exact: true }).click();
+  await expect(page.locator(".path-options")).toContainText("10.0.9.128/25");
+  await page.getByRole("button", { name: "ポリシーマトリクス", exact: true }).click();
+  await page.getByLabel("ポート", { exact: true }).fill("443");
+  const rangeCell = page.locator('button[title^="USERS (audit) → SERVERS"]');
+  await expect(rangeCell).toHaveClass(/partial/);
+  await rangeCell.click();
+  await expect(page.getByLabel("宛先範囲別の判定")).toContainText("10.0.9.128/25");
+  await expect(page.getByLabel("宛先範囲別の判定")).toContainText("10.0.9.0/25");
   expect(errors).toEqual([]);
 });

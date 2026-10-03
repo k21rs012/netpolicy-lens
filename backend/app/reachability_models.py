@@ -106,6 +106,7 @@ class HopResult(BaseModel):
 
 
 class PathResult(BaseModel):
+    destination_ranges: list[str] = Field(default_factory=list)
     result: PublicVerdict
     path: list[str] = Field(default_factory=list)
     steps: list[HopResult] = Field(default_factory=list)

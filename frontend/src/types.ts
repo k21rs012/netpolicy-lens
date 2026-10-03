@@ -29,6 +29,7 @@ export interface Trace {
   trace?: { source_file: string; line_start: number; raw_config: string };
 }
 export interface Cell {
+  destination_ranges?: { addresses: string[]; result: Result; protocol: string; path_index: number; reason?: string }[];
   evaluation?: "policy_summary" | "path";
   query?: string | null;
   reason?: string | null;
@@ -228,6 +229,7 @@ export interface ReachabilityStep {
   } | null;
 }
 export interface ReachabilityPath {
+  destination_ranges?: string[];
   result: Result;
   path: string[];
   steps: ReachabilityStep[];

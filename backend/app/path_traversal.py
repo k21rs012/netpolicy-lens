@@ -11,7 +11,8 @@ from .policy_engine import evaluate_device
 from .reachability_models import FlowState, HopResult, Packet, PathResult, PublicVerdict, TopologyData
 from .path_topology import PathTopology, contains
 from .path_results import aggregate_paths, path_verdict
-from .routing import RouteCandidate, destination_spans_routes, route_candidates
+from .routing import RouteCandidate, route_candidates
+from .destination_ranges import refine_destination
 from .topology_graph import segment_node
 
 MAX_PATHS = 128
@@ -72,11 +73,8 @@ def trace_paths(configs: list[CanonicalConfig], source: str, destination: str,
                              flow=FlowState(original=flow.original, current=packet))
             finish("PARTIAL", packet, device_path, [*steps, step], reason)
             continue
-        # ECMP enumerates equal-cost next hops. Address-range partitioning is a
-        # separate problem: don't certify an entire subnet using one host.
-        if destination_spans_routes(config, ingress.vrf, routed_packet.destination_addresses):
-            finish("PARTIAL", routed_packet, device_path, steps, "宛先範囲に複数の経路条件があります。Destination IPを指定してください")
-            continue
+        refine_destination(config, ingress.vrf, flow.original.destination_addresses,
+                           routed_packet.destination_addresses)
         candidates = route_candidates(config, target, ingress, packet.ip_version)
         inferred = candidates is None
         if inferred:

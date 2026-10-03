@@ -358,6 +358,7 @@ function queriedMatrix(port: string, result: "ALLOW" | "DENY" | "PARTIAL" | "NO_
     { source: "core-user", destination: "fw-server", evaluation: "path", query: service,
       result, reason: `${service}: テスト判定根拠`, allowed: result === "ALLOW" ? [service] : [],
       denied: result === "DENY" ? [service] : [], policy_ids: [],
+      destination_ranges: [{ addresses: ["2001:db8:abcd:ffff:8000::/65"], result, protocol: "tcp", path_index: 1 }],
       traces: result === "NO_ROUTE" ? [] : [{ device: "core", policy: "EDGE-IN", sequence: null,
         action: "unknown", result, service, reason: "適用Policyの既定動作" }],
     },
@@ -384,6 +385,8 @@ test(`Matrixの通信条件・判定根拠・経路なしを表示する（${wid
   await expect(detail).toContainText("TCP/443: テスト判定根拠");
   await expect(detail.locator(".trace .status")).toHaveClass(/partial/);
   await expect(detail).not.toContainText("Rule null");
+  await expect(detail.getByLabel("宛先範囲別の判定")).toContainText("2001:db8:abcd:ffff:8000::/65");
+  expect(await detail.locator(".destination-ranges").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.getByRole("button", { name: "詳細を閉じる" }).click();
   await page.getByLabel("ポート", { exact: true }).fill("22");
   await expect(cell).toHaveClass(/no_route/);
@@ -442,7 +445,7 @@ for (const theme of ["light", "dark"]) {
         reason: index ? "別経路の拒否ルール" : "許可ルール", route: "10.0.9.0/24", next_hop: `192.0.2.${index + 2}`,
         nat: [{ name: "SNAT", type: "source", applied: true, confidence: "EXACT" }],
       }));
-      const paths = steps.map((step, index) => ({ result: step.result, path: ["segment:core-user", `device:${step.device}`, "segment:fw-server"], steps: [step],
+      const paths = steps.map((step, index) => ({ destination_ranges: [index ? "2001:db8:9:0:8000::/65" : "2001:db8:9::/65"], result: step.result, path: ["segment:core-user", `device:${step.device}`, "segment:fw-server"], steps: [step],
         flow: { original: packet, current: { ...packet, source_addresses: [`203.0.113.${index ? 20 : 10}/32`] } } }));
       await page.route("**/api/reachability**", route => route.fulfill({ json: {
         source: "core-user", destination: "fw-server", protocol: "tcp", port: 443, state: "new", ip_version: 4,
@@ -454,6 +457,7 @@ for (const theme of ["light", "dark"]) {
       await page.getByRole("button", { name: "経路を解析" }).click();
       await expect(page.getByRole("group", { name: "候補経路" })).toBeVisible();
       await expect(page.getByRole("button", { name: "経路 1: ALLOW", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("button", { name: "経路 1: ALLOW", exact: true })).toContainText("2001:db8:9::/65");
       await expect(page.locator(".hop-list")).toContainText("192.0.2.2");
       await page.getByRole("button", { name: "経路 2: DENY", exact: true }).focus();
       await page.keyboard.press("Enter");

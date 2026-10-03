@@ -95,7 +95,7 @@ connected/static routeの最長プレフィックス一致とmetricを使い、�
 
 全候補の判定が同じならその判定を返し、異なる場合はPARTIALに集約します。ループや未解決next-hopも結果に残します。探索は128経路・2,048状態・32 hopを上限とし、再帰next-hopにも回数・深さの上限を設けています。上限到達時はPARTIALとし、未評価候補があることを表示します。
 
-宛先範囲内でstatic routeの条件が変わる場合は、範囲を分割せずPARTIALを返します。Destination IPで対象を絞ってください。動的ルーティングの実RIB、PBRの未対応match、SD-WAN固有の選択条件、実機のECMPハッシュ・分配率は再現しません。
+宛先範囲内で有効なstatic route・connected subnetの条件が変わる場合は、IPv4/IPv6のCIDRに自動分割し、各範囲を送信元から再評価します。Pathの候補経路と条件付きMatrixの詳細に、NAT前の宛先範囲と判定を表示します。ECMPも範囲ごとに評価し、結果が混在する場合は全体をPARTIALにします。同一prefix長のstatic DNATは変換後の経路境界を変換前に戻して分割します。最大128回の再評価・128候補経路で打ち切り、残った範囲をPARTIALとして表示します。Policy・NATの部分一致条件そのものの自動分割は対象外です。動的ルーティングの実RIB、PBRの未対応match、SD-WAN固有の選択条件、実機のECMPハッシュ・分配率は再現しません。
 
 ### NAT
 

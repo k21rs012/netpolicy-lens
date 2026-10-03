@@ -218,6 +218,7 @@ class CanonicalConfig(BaseModel):
 
 
 class MatrixCell(BaseModel):
+    destination_ranges: list[dict] = Field(default_factory=list)
     source: str
     destination: str
     result: Literal["ALLOW", "DENY", "PARTIAL", "UNKNOWN", "SAME_SEGMENT", "NO_ROUTE"]

@@ -399,6 +399,18 @@ export function Detail({
           </section>
         </div>
       )}
+      {!!cell.destination_ranges?.length && (
+        <section className="destination-ranges" aria-label="宛先範囲別の判定">
+          <h3>宛先範囲別の判定</h3>
+          {cell.destination_ranges.map((range, index) => (
+            <div key={index}>
+              <code>{range.addresses.join(", ")}</code>
+              <Status value={range.result} />
+              <small>{range.protocol.toUpperCase()} · 経路 {range.path_index}{range.reason ? ` · ${range.reason}` : ""}</small>
+            </div>
+          ))}
+        </section>
+      )}
       <h3>Rule trace</h3>
       {cell.traces.length ? (
         cell.traces.map((t, i) => (
