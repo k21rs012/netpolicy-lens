@@ -15,7 +15,7 @@ ORDERS = {
     "vyos": "destination NAT → routing → policy → source NAT",
     "routeros": "dstnat → routing → forward → srcnat",
     "srx": "static/destination NAT → routing → policy → reverse static/source NAT",
-    "fortios": "routing → policy → policy SNAT",
+    "fortios": "VIP DNAT → routing → policy → policy/central SNAT",
 }
 
 
@@ -164,6 +164,11 @@ def apply_nat_stage(config: CanonicalConfig, packet: Packet, ingress: Segment,
         rules.sort(key=lambda r: (r.type != "static", r.sequence if r.sequence is not None else 2**31))
     else:
         rules.sort(key=lambda r: r.sequence if r.sequence is not None else 2**31)
+    if config.device.network_os == "fortios" and stage == "destination":
+        matching = [r for r in rules if r.fortios_kind == "vip" and _match(config, r, packet, ingress, egress) != "NONE"]
+        if len(matching) > 1:
+            return NatStage(packet, [NatEffect(name=" / ".join(r.name for r in matching), type="destination",
+                stage="destination", before=packet, confidence="PARTIAL", note="複数VIPが重複一致し、適用優先順位を確定できません")], blocked=True)
     for rule in rules:
         if rule.policy_id and policy_id != rule.policy_id:
             continue
@@ -187,8 +192,11 @@ def apply_nat_stage(config: CanonicalConfig, packet: Packet, ingress: Segment,
                 return NatStage(packet, [effect])
             if rule.type not in {"source", "destination", "static"}:
                 raise ValueError("未対応のNAT actionです")
-            if config.device.network_os == "fortios" and (stage != "source" or not rule.policy_id):
-                raise ValueError("FortiOSはPolicyに関連付けられたSNATのみ対応しています")
+            if config.device.network_os == "fortios" and not (
+                (stage == "destination" and rule.fortios_kind == "vip") or
+                (stage == "source" and (rule.policy_id or rule.fortios_kind == "central-snat"))
+            ):
+                raise ValueError("FortiOS NATの適用関係を確認できません")
             if (stage == "destination" and rule.translated_src) or (stage == "source" and rule.translated_dst):
                 raise ValueError("単一ルールの双方向アドレス変換は処理順未対応です")
             updates = {}

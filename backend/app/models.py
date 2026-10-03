@@ -99,6 +99,9 @@ class Route(BaseModel):
 
 
 class Policy(BaseModel):
+    destination_vips: list[str] = Field(default_factory=list)
+    vip_only: bool = False
+    match_vip: bool | None = None
     id: str
     device: str
     name: str
@@ -136,6 +139,7 @@ class Policy(BaseModel):
 
 
 class NATRule(BaseModel):
+    fortios_kind: Literal["vip", "central-snat", "vip-reverse"] | None = None
     device: str
     name: str
     type: str

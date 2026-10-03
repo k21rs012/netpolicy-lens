@@ -8,6 +8,7 @@ from typing import NamedTuple
 from .models import CanonicalConfig
 from .nat_pipeline import apply_nat_stage, NatStage
 from .policy_engine import evaluate_device
+from .fortios_policy import fortios_policy_view
 from .reachability_models import FlowState, HopResult, Packet, PathResult, PublicVerdict, TopologyData
 from .path_topology import PathTopology, contains
 from .path_results import aggregate_paths, path_verdict
@@ -97,7 +98,8 @@ def trace_paths(configs: list[CanonicalConfig], source: str, destination: str,
                 finish(candidate.result, routed_packet, device_path, [*steps, step], candidate.evidence)
                 continue
             egress = segments[candidate.egress]
-            step = evaluate_device(config, ingress, egress, routed_packet.protocol, routed_packet.destination_port,
+            policy_config = fortios_policy_view(config, dnat.effects)
+            step = evaluate_device(policy_config, ingress, egress, routed_packet.protocol, routed_packet.destination_port,
                                    routed_packet.state, assume_session, routed_packet.source_port, routed_packet.ip_version,
                                    packet=routed_packet)
             step.flow = FlowState(original=flow.original, current=routed_packet)

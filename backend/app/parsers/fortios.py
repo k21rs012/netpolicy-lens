@@ -12,6 +12,7 @@ from ..models import (
 from .base import BaseConfigParser
 from .common import interface_networks, mask_to_prefix, slug
 from .registry import ParserRegistry
+from .fortios_nat import FortiOSNAT
 
 
 def _values(raw: str) -> list[str]:
@@ -83,7 +84,7 @@ class FortiOSParser(BaseConfigParser):
                 if block:
                     block.values[match.group(1)] = _values(match.group(2))
                     block.raw_lines.append(raw); block.line_end = number
-                elif section == "system global":
+                elif section in {"system global", "system settings"}:
                     blocks.append(Block(section=section, name="global", line_start=number, raw_start=raw,
                                         values=defaultdict(list, {match.group(1): _values(match.group(2))})))
                 continue
@@ -201,7 +202,26 @@ class FortiOSParser(BaseConfigParser):
         segment_by_name.update({z.name.lower(): z.segment_id for z in zones})
 
         policies: list[Policy] = []
-        nat_rules: list[NATRule] = []
+        nat_parser = FortiOSNAT(self, blocks, device_id, address_objects, resolve_addresses)
+        device.features["central_nat"] = nat_parser.central
+        nat_rules = nat_parser.vip_rules()
+        for rule in nat_rules:
+            address_values[rule.name] = [rule.translated_dst or "unknown"]
+            # A routed public VIP need not belong to an interface subnet.
+            # Expose an endpoint so Path can select its pre-NAT address.
+            try:
+                public = ipaddress.ip_network(rule.original_dst)
+            except ValueError:
+                continue
+            interface = iface_by_name.get(rule.in_interfaces[0]) if rule.in_interfaces else None
+            vrf = interface.vrf if interface else None
+            covered = any(s.vrf == vrf and any(public.version == ipaddress.ip_network(n).version
+                          and public.subnet_of(ipaddress.ip_network(n)) for n in s.networks) for s in segments)
+            if not rule.disabled and public.num_addresses == 1 and not covered:
+                segments.append(Segment(id=f"{device_id}-vip-{slug(rule.name)}", name=f"VIP · {rule.name}",
+                                        type="logical", device=device_id, networks=[str(public)], vrf=vrf))
+        group_members.update(nat_parser.vip_groups)
+
 
         def unknown_addresses(names: list[str], seen: set[str] | None = None) -> set[str]:
             seen = seen or set(); result: set[str] = set()
@@ -248,7 +268,8 @@ class FortiOSParser(BaseConfigParser):
             action = (block.values.get("action") or ["deny"])[0]
             canonical_action = "permit" if action in ("accept", "allow") else "deny" if action == "deny" else "unknown"
             supported_fields = {"name", "status", "srcintf", "dstintf", "srcaddr", "dstaddr", "service",
-                                "action", "nat", "comments", "logtraffic", "schedule", "srcaddr-negate", "dstaddr-negate"}
+                                "action", "nat", "comments", "logtraffic", "schedule", "srcaddr-negate", "dstaddr-negate",
+                                "uuid", "fixedport", "port-preserve", "ippool", "poolname", "match-vip"}
             partial = bool(set(block.values) - supported_fields)
             if block.values.get("schedule") and block.values["schedule"][0].lower() != "always": partial = True
             policy = Policy(id=f"{device_id}:policy:{block.name}", device=device_id,
@@ -262,24 +283,30 @@ class FortiOSParser(BaseConfigParser):
                 protocol=protocols, dst_ports=ports, action=canonical_action, direction="zone",
                 chain_id="fortios:policy",
                 confidence=Confidence.PARTIAL if partial else Confidence.EXACT,
-                from_zone=", ".join(source_names) or None, to_zone=", ".join(destination_names) or None,
+                from_zone=None if "any" in source_names else ", ".join(source_names) or None,
+                to_zone=None if "any" in destination_names else ", ".join(destination_names) or None,
                 trace=self._block_trace(block))
+            vip_names, ordinary = nat_parser.policy_destinations(block.values.get("dstaddr", []))
+            policy.destination_vips = vip_names
+            policy.vip_only = bool(vip_names) and not ordinary
+            policy.match_vip = ({"enable": True, "disable": False}.get((block.values.get("match-vip") or [""])[0]))
+            if vip_names and (ordinary or policy.dst_negate or nat_parser.central):
+                policy.unsupported_matches.append("FortiOS VIP mixed/negated/central policy reference")
             policies.append(policy)
             unresolved = unknown_addresses([*block.values.get("srcaddr", []), *block.values.get("dstaddr", [])])
-            unresolved.update(x for x in [*source_names, *destination_names] if x.lower() not in segment_by_name)
+            unresolved.update(x for x in [*source_names, *destination_names] if x.lower() not in segment_by_name and x.lower() != "any")
             unresolved.update(unknown_services(block.values.get("service", [])))
             for reference in sorted(unresolved):
                 warnings.append(ParserWarning(device=device_id, line=block.line_start,
                     config="\n".join(block.raw_lines), reason=f"unresolved policy reference: {reference}", parser=self.parser_id))
-            if (block.values.get("nat") or ["disable"])[0] == "enable":
-                nat_rules.append(NATRule(device=device_id, name=f"policy-{block.name}-snat", type="source",
-                    original_src="any", original_dst="any", translated_src="interface-address",
-                    policy_id=policy.id, dynamic_port=(block.values.get("fixedport") or ["disable"])[0] != "enable",
-                    disabled=not policy.enabled,
-                    unsupported_matches=["FortiOS IP pool"] if (block.values.get("ippool") or ["disable"])[0] == "enable" else [],
-                    protocol="any", sequence=order,
-                    in_interfaces=source_names, out_interfaces=destination_names,
-                    trace=self._block_trace(block)))
+            if not nat_parser.central and (block.values.get("nat") or ["disable"])[0] == "enable":
+                nat_rules.append(nat_parser.policy_snat(block, policy, order))
+        nat_rules.extend(nat_parser.central_rules())
+        nat_parser.finalize_vips(nat_rules, policies)
+        for rule in nat_rules:
+            for reason in rule.unsupported_matches:
+                warnings.append(ParserWarning(device=device_id, line=rule.trace.line_start if rule.trace else 1,
+                    config=rule.trace.raw_config if rule.trace else rule.name, reason=reason, parser=self.parser_id))
 
         routes: list[Route] = []
         for block in [b for b in blocks if b.section in ("router static", "router static6")]:

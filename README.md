@@ -105,13 +105,17 @@ connected/static routeの最長プレフィックス一致とmetricを使い、�
 |---|---|
 | VyOS / RouterOS | DNAT → 経路検索 → forward Policy → SNAT |
 | Junos SRX | static/destination NAT → 経路検索 → Policy → reverse static/source NAT |
-| FortiOS | 選択されたPolicyに付随するSNAT |
+| FortiOS | VIP DNAT → 経路検索 → Policy → Policy SNATまたはcentral SNAT |
 
 単一IP・portへの変換、NAT除外、ルール順序、Interface・IP family・Protocol・port条件、SRXの同じprefix長のstatic NATと逆方向マッピングを扱います。Policyで拒否した通信にSNATは適用しません。ECMPでも経路ごとに変換結果を保持します。
 
 複数pool、範囲割り当て、部分一致、未解決object、未対応条件はPARTIALとして扱います。動的PATでは送信元portを未確定として引き継ぎ、PARTIALにします。外側InterfaceのIPが不明なmasqueradeも断定しません。
 
-PAN-OS、Cisco IOS/ASA/FTD、YamahaのNAT処理順、FortiOS VIP/central NAT/IP pool、単一ルールのtwice NAT、複数SRX rule-setの優先関係、条件付きstatic NAT逆変換、NAT64、poolごとの分岐、実セッションに基づく戻り通信は未対応です。**NAT設定を読み取れることと、その変換を経路上で実行評価できることは別です。** 処理順が未対応の機器でNATを含む経路はPARTIALになります。
+FortiOSではIPv4の単一IP VIP、TCP/UDPの単一port転送、VIP group、単一IPのoverload/one-to-one IP pool、central SNATのInterface・アドレス・protocol・port条件とNAT除外に対応します。central NAT有効時はPolicy側のSNATを無視し、central-snat-mapの順序（moveを含む）で評価します。VIP名とmapped IPは区別し、VIP用Policyで内部IPへの直接通信を許可しません。Interfaceのsubnet外にある公開VIPは「VIP · 名前」の論理Segmentとして宛先に選択できます。Policyのfixedportまたはcentral SNATの明示的な単一port変換は確定値として扱い、port-preserveだけでは動的PATを確定しません。設定を再取り込みすると既存Snapshotとは別に新しい解析モデルが保存されます。
+
+FortiOSのVIP範囲・負荷分散・重複一致・未参照VIPのlocal処理、複数pool・pool範囲・port範囲変換、VIP逆方向SNATの優先順位、NGFW policy-basedモードはPARTIALにします。非VIP denyルールのmatch-vipが省略されるなど、VIPへの適用を確定できない場合もPARTIALです。FortiOS IPv6 NATは今回の対応対象外です。
+
+PAN-OS、Cisco IOS/ASA/FTD、YamahaのNAT処理順、単一ルールのtwice NAT、複数SRX rule-setの優先関係、条件付きstatic NAT逆変換、NAT64、poolごとの分岐、実セッションに基づく戻り通信は未対応です。**NAT設定を読み取れることと、その変換を経路上で実行評価できることは別です。** 処理順が未対応の機器でNATを含む経路はPARTIALになります。
 
 ### VyOSの機器自身宛て・機器発通信
 

@@ -68,3 +68,28 @@ test("実API: Import・保存・Matrix・Path・再Import・Diff・Exportを通�
   await expect(page.getByLabel("宛先範囲別の判定")).toContainText("10.0.9.0/25");
   expect(errors).toEqual([]);
 });
+
+
+test("実API: FortiOS VIPの取り込み・変換後Policy・NAT表示を確認する", async ({ page }) => {
+  const raw = readFileSync(new URL("./fixtures/fortios-vip.conf", import.meta.url), "utf8");
+  await page.goto("/");
+  await importConfig(page, raw, "fortios-vip");
+  await page.reload();
+  await page.getByRole("button", { name: "Topology / Path" }).click();
+  await page.getByLabel("Source", { exact: true }).selectOption("fg-if-wan");
+  await page.getByLabel("Destination", { exact: true }).selectOption("fg-if-wan");
+  await page.getByLabel("Source IP", { exact: true }).fill("198.51.100.55");
+  await page.getByLabel("Destination IP", { exact: true }).fill("198.51.100.10");
+  await page.getByLabel("Port", { exact: true }).fill("8443");
+  await page.getByRole("button", { name: "経路を解析" }).click();
+  await expect(page.locator(".path-verdict .status")).toHaveText("許可");
+  await expect(page.locator(".hop-list")).toContainText("NAT: WEB");
+  await expect(page.locator(".hop-list")).toContainText("10.0.9.20/32 (port 443)");
+  await expect(page.locator(".path-chain")).toContainText("LAN");
+  // The VIP policy must not permit direct access to the mapped host.
+  await page.getByLabel("Destination", { exact: true }).selectOption("fg-if-lan");
+  await page.getByLabel("Destination IP", { exact: true }).fill("10.0.9.20");
+  await page.getByLabel("Port", { exact: true }).fill("443");
+  await page.getByRole("button", { name: "経路を解析" }).click();
+  await expect(page.locator(".path-verdict .status")).toHaveText("拒否");
+});
