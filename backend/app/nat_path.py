@@ -92,7 +92,7 @@ def trace_nat_path(configs: list[CanonicalConfig], source: str, destination: str
         sid, packet, path, steps, used, uncertain = queue.popleft()
         states += 1
         ingress = segments[sid]
-        if steps and sid == destination and packet.destination_addresses == flow.original.destination_addresses:
+        if steps and not steps[-1].next_hop and sid == destination and packet.destination_addresses == flow.original.destination_addresses:
             finish(verdict(steps, uncertain), packet, path, steps)
             continue
         if ingress.device in used:
@@ -171,7 +171,7 @@ def trace_nat_path(configs: list[CanonicalConfig], source: str, destination: str
             if any(e.confidence == "PARTIAL" for e in step.nat) and step.result == "ALLOW":
                 step.result, step.reason = "PARTIAL", "NATの動的port割り当ては未確定です"
             translated = next_packet.destination_addresses != flow.original.destination_addresses
-            if (not translated and egress.id == destination) or (translated and not candidate.next_hop and _contains(egress, next_packet.destination_addresses)):
+            if not candidate.next_hop and ((not translated and egress.id == destination) or (translated and _contains(egress, next_packet.destination_addresses))):
                 finish(verdict(next_steps, branch_uncertain), next_packet, next_path, next_steps)
                 continue
             # A directly connected destination LAN is already the endpoint;

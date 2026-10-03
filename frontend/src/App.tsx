@@ -54,11 +54,12 @@ export default function App() {
   });
   const {
     matrix, devices, policies, capabilities, debug, snapshots, loading,
-    protocol, setProtocol, port, setPort, error, refresh, loadSample,
+    protocol, setProtocol, port, setPort, error, refresh, loadSample, revision,
   } = useAppData();
   const [selected, setSelected] = useState<Cell | null>(null);
   useEffect(() => setSelected(null), [matrix, protocol, port]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  useEffect(() => setSelectedDevice(null), [revision]);
   const [dialog, setDialog] = useState(false);
   useEffect(() => {
     try {
@@ -226,14 +227,14 @@ export default function App() {
             )}
           </>
         )}
-        {page === "topology" && <TopologyView />}
-        {page === "diff" && <SnapshotDiff snapshots={snapshots} />}{" "}
+        {page === "topology" && <TopologyView key={revision} />}
+        {page === "diff" && <SnapshotDiff key={revision} snapshots={snapshots} />}{" "}
         {page === "policies" && <Policies items={policies} />}{" "}
         {page === "devices" && (
           <Devices items={devices} onSelect={setSelectedDevice} />
         )}{" "}
         {page === "capabilities" && <Capabilities items={capabilities} />}{" "}
-        {page === "debug" && <Debug data={debug} />}
+        {page === "debug" && <Debug key={revision} data={debug} />}
         <footer className="main-footer">
           <span>
             <Database />

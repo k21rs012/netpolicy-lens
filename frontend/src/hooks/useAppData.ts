@@ -79,5 +79,6 @@ export function useAppData() {
   return {
     matrix, devices, policies, capabilities, debug, snapshots, loading: loading || matrixLoading,
     protocol, setProtocol, port, setPort, error: matrixError || error, refresh, loadSample,
+    revision: refreshIndex,
   };
 }

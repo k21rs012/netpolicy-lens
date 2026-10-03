@@ -116,6 +116,12 @@ def route_candidates(config: CanonicalConfig, destination: Segment,
                 result.append(RouteCandidate(None, f"{route.destination} ({route.route_type})", inherited_hop, "NO_ROUTE"))
                 continue
             hop = route.next_hop
+            if hop:
+                try:
+                    ipaddress.ip_address(hop.partition("%")[0])
+                except ValueError:
+                    result.append(RouteCandidate(None, f"{route.destination}: next-hop不明", hop, "UNKNOWN"))
+                    continue
             scope = hop.partition("%")[2] if hop else None
             interface = scope or route.interface
             if interface:
