@@ -228,7 +228,7 @@ export default function App() {
           </>
         )}
         {page === "topology" && <TopologyView key={revision} />}
-        {page === "diff" && <SnapshotDiff key={revision} snapshots={snapshots} />}{" "}
+        {page === "diff" && <SnapshotDiff key={`${revision}:${snapshots[0]?.id}`} snapshots={snapshots} />}{" "}
         {page === "policies" && <Policies items={policies} />}{" "}
         {page === "devices" && (
           <Devices items={devices} onSelect={setSelectedDevice} />

@@ -14,4 +14,4 @@ NetPolicy Lens is a local configuration-analysis tool and currently has no authe
 
 Imported configuration is processed locally. Password, secret, and SNMP community patterns are masked before snapshot persistence and Canonical JSON export. Custom credential syntax may not be recognized, so review and redact sensitive files before importing them.
 
-Uploads are limited to 20 MiB per file, 500 files per import, and 50 MiB of expanded ZIP content. These limits are defense-in-depth and do not replace host-level resource limits.
+Uploads are limited to 20 MiB per file, 500 files per import, and 50 MiB of expanded ZIP content. The bundled nginx also caps the complete multipart request at 64 MiB. These limits are defense-in-depth and do not replace host-level resource limits.

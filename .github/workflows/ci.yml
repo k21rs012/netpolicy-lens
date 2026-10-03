@@ -52,3 +52,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose build
+      - run: docker compose up -d --wait
+      - run: python3 scripts/container_smoke.py http://127.0.0.1:8080
+      - run: docker compose restart backend
+      - run: python3 scripts/container_smoke.py http://127.0.0.1:8080 --verify-existing
+      - if: always()
+        run: docker compose down -v

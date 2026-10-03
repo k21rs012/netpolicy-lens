@@ -151,7 +151,7 @@ DNAT後の機器自身宛てはinputで評価します。機器発通信はprero
 
 configの解析と保存はローカルで行い、configを外部の解析サービスへ送信しません。Password・Secret・SNMP Communityの既知パターンはSnapshot保存前とCanonical JSON Export時にマスクします。独自の資格情報構文は検出できない場合があります。なお、UIのWebフォントはGoogle Fontsを参照します。
 
-認証・RBACは未実装です。リモートで利用する場合は認証付きReverse Proxyを配置し、SQLite volumeへのアクセスを制限してください。Importの上限は1ファイル20 MiB、1回500ファイル、ZIP展開後50 MiBです。詳細と脆弱性の報告方針は [SECURITY.md](SECURITY.md) を参照してください。
+認証・RBACは未実装です。リモートで利用する場合は認証付きReverse Proxyを配置し、SQLite volumeへのアクセスを制限してください。Importの上限は1ファイル20 MiB、1回500ファイル、ZIP展開後50 MiBです。Composeのnginx経由では、multipart全体を1リクエスト64 MiBまで受け付けます。詳細と脆弱性の報告方針は [SECURITY.md](SECURITY.md) を参照してください。
 
 ## ローカル開発
 
@@ -196,7 +196,15 @@ npm run build
 npm run test:e2e
 ```
 
-LinuxでブラウザのOS依存ライブラリも必要な場合は、CIと同じ `npx playwright install --with-deps chromium` を使用します。GitHub ActionsではBackendテスト、Frontendビルド・Playwright E2E、`docker compose build` を実行します。
+LinuxでブラウザのOS依存ライブラリも必要な場合は、CIと同じ `npx playwright install --with-deps chromium` を使用します。実APIとの統合テストは、Backendの依存関係が入ったPythonを使用します。Frontendディレクトリで実行してください。
+
+```bash
+NETPOLICY_TEST_PYTHON=../.venv/bin/python npm run test:integration
+```
+
+上のPython指定はBackendディレクトリから解決されます。仮想環境を有効化済みなら `npm run test:integration` のみでも実行できます。統合テストはポート18000 / 15173と一時SQLiteを使い、既存サーバーを再利用しません。Import、再読込、Matrix、Path、再Import、Diff、JSON ExportをAPIのモックなしで確認します。
+
+GitHub ActionsではBackendテスト、Frontendビルド・画面E2E・実API統合テスト、Compose起動後のnginx経由ImportとBackend再起動後の保存確認を実行します。`scripts/container_smoke.py` は合成Snapshotを作るため、検証専用環境だけで使用してください。今回の検証内容は [検証記録](docs/verification-2026-10-03.md) にまとめています。
 
 ## API
 
@@ -256,7 +264,8 @@ SnapshotStore → マスク済みconfig・Canonical ModelをSQLiteへ保存
 | `backend/app/parsers/` | Network OS検出・構文解析・設定行のTrace |
 | `backend/app/models.py` | Device、Segment、Route、Policy、NATなどの共通モデル |
 | `backend/app/analyzer.py` / `matrix_query.py` | 設定概要／通信条件付きMatrix |
-| `backend/app/reachability.py` / `nat_path.py` | 入力の解決と、NAT有無に共通の経路探索・集約 |
+| `backend/app/reachability.py` / `path_traversal.py` | 入力の解決と、NAT有無に共通の経路探索・集約 |
+| `backend/app/path_topology.py` / `path_results.py` | 接続候補の照合・経路とMatrixの判定集約 |
 | `backend/app/routing.py` / `policy_engine.py` / `nat_pipeline.py` | 経路候補、Policy、NATの評価 |
 | `backend/app/reachability_models.py` | APIに返す経路・通信情報の型 |
 | `backend/app/storage.py` / `main.py` | SQLite保存・API |

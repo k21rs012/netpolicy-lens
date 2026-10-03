@@ -469,3 +469,25 @@ for (const theme of ["light", "dark"]) {
     });
   }
 }
+
+test("遅いDiff応答が選択し直したSnapshotの結果を上書きしない", async ({ page }) => {
+  const snapshots = ["three", "two", "one"].map(id => ({ id, name: id, created_at: "2026-10-03T00:00:00Z", device_count: 1 }));
+  await page.route("**/api/snapshots", route => route.fulfill({ json: snapshots }));
+  let releaseSlow!: () => void;
+  const hold = new Promise<void>(resolve => { releaseSlow = resolve; });
+  await page.route("**/api/diff?**", async route => {
+    const old = new URL(route.request().url()).searchParams.get("before") === "two";
+    if (old) await hold;
+    await route.fulfill({ json: { summary: { new_allow: old ? 99 : 12, new_deny: 0, changed_rules: 0, added_rules: 0, removed_rules: 0, network_changes: 0 }, communications: [], policies: [], network: [] } });
+  });
+  await page.reload();
+  const initial = page.waitForRequest(r => r.url().includes("/api/diff?before=two"));
+  await page.getByRole("button", { name: "Snapshot Diff" }).click();
+  await initial;
+  await page.getByLabel("比較元Snapshot").selectOption("one");
+  await expect(page.locator(".diff-summary .risk b")).toHaveText("12");
+  const oldResponse = page.waitForResponse(r => r.url().includes("/api/diff?before=two"));
+  releaseSlow();
+  await oldResponse;
+  await expect(page.locator(".diff-summary .risk b")).toHaveText("12");
+});

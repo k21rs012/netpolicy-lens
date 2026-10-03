@@ -30,17 +30,19 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
     }
   }, [snapshots]);
   useEffect(() => {
+    let active = true;
+    setData(null);
+    setError("");
     if (!before || !after || before === after) {
-      setData(null);
+      setBusy(false);
       return;
     }
     setBusy(true);
-    setError("");
-    api
-      .diff(before, after)
-      .then(setData)
-      .catch((e) => setError(String(e)))
-      .finally(() => setBusy(false));
+    api.diff(before, after)
+      .then(value => { if (active) setData(value); })
+      .catch(cause => { if (active) setError(String(cause)); })
+      .finally(() => { if (active) setBusy(false); });
+    return () => { active = false; };
   }, [before, after]);
   if (snapshots.length < 2)
     return (
