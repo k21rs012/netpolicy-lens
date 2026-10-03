@@ -33,6 +33,7 @@ class RouteCandidate:
     evidence: str
     next_hop: str | None = None
     result: str | None = None
+    truncated: bool = False
 
 
 def active_routes(config: CanonicalConfig, vrf: str | None) -> list[Route]:
@@ -56,6 +57,16 @@ def active_routes(config: CanonicalConfig, vrf: str | None) -> list[Route]:
     return entries
 
 
+def destination_spans_routes(config: CanonicalConfig, vrf: str | None, addresses: tuple[str, ...]) -> bool:
+    """A subnet query needs partitioning when a more-specific route covers part."""
+    destinations = [ipaddress.ip_network(value) for value in addresses]
+    routes = [ipaddress.ip_network(route.destination) for route in active_routes(config, vrf)]
+    return any(
+        address.version == route.version and route != address and route.subnet_of(address)
+        for address in destinations for route in routes
+    )
+
+
 def route_candidates(config: CanonicalConfig, destination: Segment,
                      ingress: Segment | None, ip_version: int | None) -> list[RouteCandidate] | None:
     vrf = ingress.vrf if ingress else None
@@ -73,7 +84,7 @@ def route_candidates(config: CanonicalConfig, destination: Segment,
         nonlocal lookups
         lookups += 1
         if lookups > 2048 or len(visited) >= 64:
-            return [RouteCandidate(None, "next-hop探索の上限に達しました", inherited_hop, "PARTIAL")]
+            return [RouteCandidate(None, "next-hop探索の上限に達しました", inherited_hop, "PARTIAL", truncated=True)]
         if address in visited:
             return [RouteCandidate(None, "recursive next-hop loop", inherited_hop, "UNKNOWN")]
         visited = visited | {address}
@@ -108,7 +119,7 @@ def route_candidates(config: CanonicalConfig, destination: Segment,
         result = []
         for route in best:
             if len(result) >= 128 or lookups > 2048:
-                result.append(RouteCandidate(None, "next-hop探索の上限に達しました", result="PARTIAL"))
+                result.append(RouteCandidate(None, "next-hop探索の上限に達しました", result="PARTIAL", truncated=True))
                 break
             if (route.metric if route.metric is not None else default_distance) != metric:
                 continue
@@ -134,7 +145,7 @@ def route_candidates(config: CanonicalConfig, destination: Segment,
                 try:
                     resolved = resolve(ipaddress.ip_address(hop.partition("%")[0]), visited, hop)
                     result.extend(RouteCandidate(c.egress, route.destination + (f" / {c.evidence}" if c.result else ""),
-                                                 c.next_hop, c.result) for c in resolved)
+                                                 c.next_hop, c.result, c.truncated) for c in resolved)
                 except ValueError:
                     result.append(RouteCandidate(None, f"{route.destination}: next-hop不明", hop, "UNKNOWN"))
             else:

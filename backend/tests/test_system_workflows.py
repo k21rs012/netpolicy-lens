@@ -82,3 +82,41 @@ def test_all_sample_pairs_return_valid_shared_path_results(client, protocol, por
     for cell in data['cells']:
         assert cell['result'] in {'ALLOW', 'DENY', 'PARTIAL', 'UNKNOWN', 'NO_ROUTE', 'SAME_SEGMENT'}
         assert cell['evaluation'] == 'path'
+
+
+@pytest.mark.parametrize('version', [4, 6])
+def test_nat_ecmp_vrf_combination_preserves_each_branch(version):
+    import ipaddress
+    from app.models import NATRule
+    configs = diamond()
+    base = int(ipaddress.ip_address('2001:db8::'))
+
+    def address(raw):
+        return str(ipaddress.ip_address(base + int(ipaddress.ip_address(raw)))) if version == 6 else raw
+
+    def network(raw):
+        host, prefix = raw.split('/')
+        return f'{address(host)}/{int(prefix) + (96 if version == 6 else 0)}'
+
+    for cfg in configs:
+        for segment in cfg.segments:
+            segment.vrf = 'blue'
+            segment.networks = [network(raw) for raw in segment.networks]
+        for interface in cfg.interfaces:
+            interface.vrf = 'blue'
+            interface.addresses = [network(raw) for raw in interface.addresses]
+        for route in cfg.routes:
+            route.vrf = 'blue'
+            route.destination = network(route.destination)
+            route.next_hop = address(route.next_hop) if route.next_hop else None
+            route.next_hops = [address(hop) for hop in route.next_hops]
+    for index, host in [(1, '203.0.113.10'), (2, '203.0.113.20')]:
+        configs[index].nat = [NATRule(device=f'r{index}', name='SNAT', type='source',
+                                     original_src=network('10.0.1.0/24'), translated_src=address(host), out_interfaces=['out'])]
+    configs[3].policies[0].src = [network('203.0.113.10/32')]
+    result = analyze_reachability(configs, 'r0-in', 'r3-out', 'tcp', 443, ip_version=version,
+                                  source_ip=address('10.0.1.10'), destination_ip=address('10.0.9.20'))
+    assert result['result'] == 'PARTIAL'
+    assert {path['result'] for path in result['paths']} == {'ALLOW', 'DENY'}
+    assert {path['flow']['current']['source_addresses'][0] for path in result['paths']} == {network('203.0.113.10/32'), network('203.0.113.20/32')}
+    assert all(path['steps'][0]['packet_out']['source_addresses'] == [network('10.0.1.10/32')] for path in result['paths'])

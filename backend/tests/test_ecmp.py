@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main, nat_path
+from app import main, path_traversal
 from app.matrix_query import build_query_matrix
 from app.models import CanonicalConfig, Device, Interface, NATRule, Policy, Route, Segment
 from app.parsers import ParserRegistry
@@ -113,7 +113,7 @@ def test_recursive_ecmp_and_vrf_isolation():
 
 @pytest.mark.parametrize('limit', ['MAX_PATHS', 'MAX_STATES', 'MAX_HOPS'])
 def test_exploration_limits_never_claim_all_allow(monkeypatch, limit):
-    monkeypatch.setattr(nat_path, limit, 1)
+    monkeypatch.setattr(path_traversal, limit, 1)
     result = trace(diamond())
     assert result['result'] == 'PARTIAL'
     assert not result['paths_complete']

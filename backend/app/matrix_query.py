@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .models import CanonicalConfig, MatrixCell
 from .reachability import analyze_reachability
+from .path_results import aggregate_verdicts
 from .topology_graph import build_topology_model
 
 PORT_PROTOCOLS = ("tcp", "udp", "sctp")
@@ -66,7 +67,7 @@ def build_query_matrix(
                                 "route": step["route"], "trace": verdict.get("trace"),
                                 "path_index": index, "path_result": path["result"], "next_hop": step.get("next_hop"),
                             })
-            verdict = results[0] if len(set(results)) == 1 else "PARTIAL"
+            verdict = aggregate_verdicts(results)
             cells.append(MatrixCell(
                 source=src.id, destination=dst.id, result=verdict, evaluation="path",
                 query=" + ".join(f"{p.upper()}/{port if port is not None else 'ANY'}" for p in protocols),

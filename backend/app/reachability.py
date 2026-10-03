@@ -4,6 +4,7 @@ import ipaddress
 
 from .flow import create_flow
 from .models import CanonicalConfig
+from .path_traversal import trace_paths
 from .reachability_models import ReachabilityResult, TopologyData
 from .topology_graph import build_topology_model, segment_node
 
@@ -62,6 +63,5 @@ def analyze_reachability(
     if ip_version is None and len(families) > 1:
         return _result(**base, result="UNKNOWN", route_reason="複数のIP familyがあります。ip_versionを指定してください")
 
-    from .nat_path import trace_nat_path
-    traced = trace_nat_path(configs, source, destination, flow, topology, assume_session)
+    traced = trace_paths(configs, source, destination, flow, topology, assume_session)
     return _result(**{**base, **traced})
