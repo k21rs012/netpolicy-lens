@@ -38,6 +38,19 @@ export const api = {
   warnings: (device = "") =>
     json<{ items: ParserWarning[] }>(`/api/parser/warnings?device=${encodeURIComponent(device)}`),
   snapshots: () => json<Snapshot[]>("/api/snapshots"),
+  backupSnapshot: async (id: string) => {
+    const response = await fetch(`/api/snapshots/${encodeURIComponent(id)}/backup`);
+    if (!response.ok) throw new Error(await response.text());
+    return response.blob();
+  },
+  previewRestore: (file: File) => {
+    const body = new FormData(); body.append("file", file);
+    return json<{ snapshot: Snapshot; suggested_name: string }>("/api/snapshots/restore/preview", { method: "POST", body });
+  },
+  restoreSnapshot: (file: File, name: string) => {
+    const body = new FormData(); body.append("file", file); body.append("name", name);
+    return json<Snapshot>("/api/snapshots/restore", { method: "POST", body });
+  },
   renameSnapshot: (id: string, name: string) => json<Snapshot>(`/api/snapshots/${encodeURIComponent(id)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
   }),

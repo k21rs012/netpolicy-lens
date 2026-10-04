@@ -612,3 +612,21 @@ for (const width of [390, 1440]) {
     await page.screenshot({ path: `/tmp/netpolicy-diff-query-${width}.png`, fullPage: true, animations: "disabled" });
   });
 }
+
+test("復元失敗後も再操作でき、ファイル変更で確認内容を破棄する", async ({ page }) => {
+  const snapshot = { id: "snap-1", name: "保存構成", created_at: "2026-10-05T00:00:00Z", parser_version: "0.1.0", device_count: 1 };
+  await page.route("**/api/snapshots/restore/preview", route => route.fulfill({ json: { snapshot, suggested_name: "保存構成（復元）" } }));
+  await page.route("**/api/snapshots/restore", route => route.fulfill({ status: 500, body: "restore failed" }));
+  await page.getByRole("button", { name: "Snapshots", exact: true }).click();
+  const input = page.getByLabel("Snapshotバックアップファイル");
+  await input.setInputFiles({ name: "one.json", mimeType: "application/json", buffer: Buffer.from("{}") });
+  await page.getByRole("button", { name: "内容を確認" }).click();
+  await expect(page.getByLabel("復元後のSnapshot名")).toHaveValue("保存構成（復元）");
+  await page.evaluate(() => document.documentElement.dataset.theme = "dark");
+  await page.screenshot({ path: "/tmp/netpolicy-restore-dark.png", fullPage: true, animations: "disabled" });
+  await page.getByRole("button", { name: "復元する", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("restore failed");
+  await expect(page.getByRole("button", { name: "復元する", exact: true })).toBeEnabled();
+  await input.setInputFiles({ name: "two.json", mimeType: "application/json", buffer: Buffer.from("{}") });
+  await expect(page.getByRole("button", { name: "復元する", exact: true })).toHaveCount(0);
+});

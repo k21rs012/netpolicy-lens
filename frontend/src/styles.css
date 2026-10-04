@@ -254,3 +254,10 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 .diff-query p { flex-basis:100%; color:var(--muted); font-size:12px; line-height:1.7; margin:0; }
 .diff-query-scope { overflow-wrap:anywhere; color:var(--muted); }
 .comm-change details { overflow-wrap:anywhere; font-size:12px; line-height:1.7; }
+
+.snapshot-restore { padding:20px; margin:16px 0 24px; border:1px solid var(--line); border-radius:8px; background:var(--surface); overflow-wrap:anywhere; }
+.snapshot-restore h3 { margin-top:0; }
+.snapshot-restore p { color:var(--muted); font-size:12px; line-height:1.7; }
+.snapshot-restore label { display:flex; flex-direction:column; gap:8px; font-size:12px; }
+.snapshot-restore button { margin-top:12px; }
+.snapshot-restore input[type=file] { box-sizing:border-box; min-width:0; width:100%; }

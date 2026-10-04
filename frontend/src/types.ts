@@ -113,6 +113,7 @@ export interface Capability {
   status: string;
 }
 export interface Snapshot {
+  restored_from?: { id: string; name: string; created_at: string; parser_version: string } | null;
   id: string;
   name: string;
   created_at: string;

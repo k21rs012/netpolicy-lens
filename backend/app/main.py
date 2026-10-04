@@ -17,6 +17,7 @@ from .diff import compare_snapshots
 from .parsers import ParserRegistry
 from .sample import SAMPLES
 from .storage import SnapshotStore
+from .snapshot_backup import BackupInvalid, MAX_BACKUP_BYTES, decode_backup, encode_backup
 from .flow import FlowInputError
 from .topology import analyze_reachability, build_topology
 
@@ -159,6 +160,49 @@ def delete_snapshot(snapshot_id: str):
         raise HTTPException(404, "Snapshot not found")
     matrix_cache.discard_store(store)
     return Response(status_code=204)
+
+
+def _read_backup(file: UploadFile):
+    data = file.file.read(MAX_BACKUP_BYTES + 1)
+    if len(data) > MAX_BACKUP_BYTES:
+        raise HTTPException(413, "バックアップは50 MiB以下にしてください")
+    try:
+        return decode_backup(data)
+    except BackupInvalid as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/snapshots/{snapshot_id}/backup")
+def export_snapshot(snapshot_id: str):
+    saved = store.backup(snapshot_id)
+    if saved is None:
+        raise HTTPException(404, "Snapshot not found")
+    try:
+        data = encode_backup(*saved)
+    except BackupInvalid as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return Response(data, media_type="application/json", headers={
+        "Content-Disposition": f'attachment; filename="snapshot-{snapshot_id}.netpolicy.json"',
+        "Cache-Control": "no-store",
+    })
+
+
+@app.post("/api/snapshots/restore/preview")
+def preview_snapshot_restore(file: UploadFile = File(...)):
+    backup = _read_backup(file)
+    return {"snapshot": backup.snapshot, "suggested_name": (backup.snapshot.name[:124] + "（復元）")}
+
+
+@app.post("/api/snapshots/restore", status_code=201)
+def restore_snapshot(file: UploadFile = File(...), name: str | None = Form(None, max_length=128)):
+    backup = _read_backup(file)
+    restored_name = name.strip() if name is not None else backup.snapshot.name[:124] + "（復元）"
+    if not restored_name:
+        raise HTTPException(422, "Snapshot名を入力してください")
+    origin = backup.snapshot.model_dump(include={"id", "name", "created_at", "parser_version"})
+    snapshot_id = store.create(restored_name, [(item.source_file, item.raw_config, item.canonical) for item in backup.configs],
+                               parser_version=backup.snapshot.parser_version, restored_from=origin)
+    return store.get(snapshot_id)
 
 
 @app.get("/api/diff")

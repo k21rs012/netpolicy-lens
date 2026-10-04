@@ -37,6 +37,18 @@ docker compose down
 
 **Snapshots** または **履歴を管理** から、名前・IDによる検索、名前変更、削除ができます。名前変更はID・作成日時・保存済みモデルを維持します。削除は確認画面を経て対象の保存configもまとめて削除し、元に戻せません。選択中のSnapshotを削除した場合は残っている最新の構成へ切り替わり、最後の1件を削除すると空の状態になります。Snapshot Diffでは比較する2件を個別に指定できます。
 
+### Snapshotのバックアップ・復元
+
+**Snapshots** の各履歴にある **バックアップ** から、1件のSnapshotを `.netpolicy.json` としてダウンロードできます。保存済みconfig、Canonical Model、名前・元のID・作成日時・Parserバージョンを含みます。
+
+復元するには **バックアップから復元** でファイルを選び、**内容を確認** → 名前を確認・変更 → **復元する** の順に操作します。新しいID・復元時の作成日時で追加し、復元したSnapshotへ切り替えます。同名の既存Snapshotも上書きしません。復元元の名前・日時・IDと元のParserバージョンを保持します。configの再解析は行わないため、Parser修正の適用には通常のConfig Importを使ってください。
+
+形式バージョン1・Canonical schemaバージョン1、最大50 MiB・500 configに対応します。SHA-256によるファイル内容の整合性、機器数、解析モデルの型・フィールド・IDなどを保存前に検証し、失敗した場合は保存しません。未知のバージョンや欠落フィールドを推測して復元することはありません。DBへの追加は1トランザクションで行います。
+
+バックアップは保存時の資格情報マスクを引き継ぎ、書き出し・復元時にも既知パターンを再マスクします。マスク済み資格情報の元の値は復元できません。ファイルは暗号化していません。通常のCanonical JSON Exportはこのバックアップ形式とは異なります。自動バックアップ・全履歴の一括復元は今回の対象外です。
+
+
+
 ### 2. ポリシーマトリクスで全体を見る
 
 送信元・宛先Segmentの組み合わせを一覧表示します。Site、Device、Vendor、OS、Zone、VLAN、Segmentで絞り込み、セルを選ぶと判定理由とRule traceを確認できます。
@@ -193,7 +205,7 @@ npm ci
 npm run dev -- --host 127.0.0.1
 ```
 
-UIは [http://localhost:5173](http://localhost:5173)、API仕様は [http://localhost:8000/docs](http://localhost:8000/docs) で確認できます。Viteは `/api` をポート8000へ転送します。Backendの保存先は `DATABASE_PATH` で変更でき、省略時は起動ディレクトリからの `./data/netpolicy.db`（上記手順では `backend/data/netpolicy.db`）です。
+UIは [http://localhost:5173](http://localhost:5173)、API仕様は [http://localhost:8000/docs](http://localhost:8000/docs) で確認できます。Viteは `/api` をポート8000へ転送します。Backendテストは起動時から専用一時DBに隔離します。Backendの保存先は `DATABASE_PATH` で変更でき、省略時は起動ディレクトリからの `./data/netpolicy.db`（上記手順では `backend/data/netpolicy.db`）です。
 
 ### テスト
 
@@ -220,7 +232,7 @@ LinuxでブラウザのOS依存ライブラリも必要な場合は、CIと同�
 NETPOLICY_TEST_PYTHON=../.venv/bin/python npm run test:integration
 ```
 
-上のPython指定はBackendディレクトリから解決されます。仮想環境を有効化済みなら `npm run test:integration` のみでも実行できます。統合テストはポート18000 / 15173と一時SQLiteを使い、既存サーバーを再利用しません。Import、再読込、Matrix、Path、再Import、Diff、JSON Export、Snapshot切り替え・名前変更・削除をAPIのモックなしで確認します。
+上のPython指定はBackendディレクトリから解決されます。仮想環境を有効化済みなら `npm run test:integration` のみでも実行できます。統合テストはポート18000 / 15173と一時SQLiteを使い、既存サーバーを再利用しません。Import、再読込、Matrix、Path、再Import、Diff、JSON Export、Snapshot切り替え・名前変更・削除・バックアップ・復元をAPIのモックなしで確認します。
 
 GitHub ActionsではBackendテスト、Frontendビルド・画面E2E・実API統合テスト、Compose起動後のnginx経由ImportとBackend再起動後の保存確認を実行します。`scripts/container_smoke.py` は合成Snapshotを作るため、検証専用環境だけで使用してください。今回の検証内容は [検証記録](docs/verification-2026-10-03.md) にまとめています。
 
@@ -244,6 +256,9 @@ Snapshotに対する読み取りAPIは、`snapshot_id` を省略すると最新S
 | GET | `/api/snapshots` | Snapshot一覧 |
 | PATCH | `/api/snapshots/{id}` | 名前変更（JSON `{"name":"変更前"}`、前後空白を除いた1〜128文字） |
 | DELETE | `/api/snapshots/{id}` | 対象と保存configを削除（204） |
+| GET | `/api/snapshots/{id}/backup` | SnapshotバックアップJSONのダウンロード |
+| POST | `/api/snapshots/restore/preview` | multipart `file` の検証・復元内容確認 |
+| POST | `/api/snapshots/restore` | multipart `file` と任意の `name` で新しいSnapshotに復元（201） |
 | GET | `/api/devices`、`/api/devices/{device_id}` | 機器一覧・詳細 |
 | GET | `/api/policies` | 共通Policy一覧 |
 | GET | `/api/matrix`、`/api/matrix/{src}/{dst}` | Matrix・セル根拠 |

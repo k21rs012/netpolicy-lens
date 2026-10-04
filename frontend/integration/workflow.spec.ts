@@ -227,3 +227,46 @@ test("実API: Policyの宛先範囲をPath・Matrix・Diffで比較できる", a
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "/tmp/netpolicy-policy-range-diff.png", fullPage: true, animations: "disabled" });
 });
+
+
+test("実API: Snapshotをバックアップし、削除後に復元できる", async ({ page }) => {
+  await page.goto("/");
+  await importConfig(page, original, "backup-source");
+  await page.getByRole("button", { name: "履歴を管理" }).click();
+  const source = page.getByRole("article", { name: "Snapshot backup-source", exact: true });
+  const downloading = page.waitForEvent("download");
+  await source.getByRole("button", { name: "バックアップ", exact: true }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/snapshot-.*\.netpolicy\.json/);
+  const rawBackup = readFileSync((await download.path())!);
+  const backup = JSON.parse(rawBackup.toString());
+  expect(rawBackup.toString()).not.toContain("synthetic-test-community");
+  const count = (await (await page.request.get("/api/snapshots")).json()).length;
+  await page.getByLabel("Snapshotバックアップファイル").setInputFiles({ name: "broken.json", mimeType: "application/json", buffer: Buffer.from("not JSON") });
+  await page.getByRole("button", { name: "内容を確認", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("バックアップの形式");
+  expect((await (await page.request.get("/api/snapshots")).json()).length).toBe(count);
+  await source.getByRole("button", { name: "削除", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "削除を実行" }).click();
+  await expect(source).toHaveCount(0);
+  await page.getByLabel("Snapshotバックアップファイル").setInputFiles({ name: "snapshot.netpolicy.json", mimeType: "application/json", buffer: rawBackup });
+  await page.getByRole("button", { name: "内容を確認", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Snapshotの復元" })).toContainText("backup-source");
+  await page.getByLabel("復元後のSnapshot名").fill("復元した構成");
+  await page.setViewportSize({ width: 390, height: 1000 });
+  if (!await page.locator(".app").evaluate(el => el.classList.contains("sidebar-collapsed")))
+    await page.getByRole("button", { name: "メニューを畳む" }).click();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: "/tmp/netpolicy-restore-preview.png", fullPage: true, animations: "disabled" });
+  await page.getByRole("button", { name: "復元する", exact: true }).click();
+  const restored = page.getByRole("article", { name: "Snapshot 復元した構成", exact: true });
+  await expect(restored).toContainText("選択中");
+  await expect(restored).toContainText("復元元: backup-source");
+  const restoredId = await page.getByLabel("解析対象Snapshot").inputValue();
+  expect(restoredId).not.toBe(backup.snapshot.id);
+  const matrix = await (await page.request.get(`/api/matrix?snapshot_id=${restoredId}&protocol=tcp&port=443`)).json();
+  expect(matrix.cells.find((c: any) => c.source === "audit-vlan-10" && c.destination === "audit-vlan-20").result).toBe("ALLOW");
+  await page.reload();
+  await expect(page.getByLabel("解析対象Snapshot")).toHaveValue(restoredId);
+});
