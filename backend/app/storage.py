@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import uuid
@@ -18,6 +17,7 @@ class SnapshotStore:
         with self.connect() as con:
             con.execute("CREATE TABLE IF NOT EXISTS snapshots (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, parser_version TEXT NOT NULL)")
             con.execute("CREATE TABLE IF NOT EXISTS configs (id TEXT PRIMARY KEY, snapshot_id TEXT NOT NULL, source_file TEXT NOT NULL, raw_config TEXT NOT NULL, canonical_json TEXT NOT NULL, FOREIGN KEY(snapshot_id) REFERENCES snapshots(id))")
+            con.execute("CREATE INDEX IF NOT EXISTS configs_snapshot_file ON configs(snapshot_id, source_file)")
 
     def connect(self):
         con = sqlite3.connect(self.path); con.row_factory = sqlite3.Row; return con
@@ -39,7 +39,7 @@ class SnapshotStore:
     def load(self, snapshot_id: str) -> list[CanonicalConfig]:
         with self.connect() as con:
             rows = con.execute("SELECT canonical_json FROM configs WHERE snapshot_id=? ORDER BY source_file", (snapshot_id,)).fetchall()
-        return [CanonicalConfig.model_validate(json.loads(r[0])) for r in rows]
+        return [CanonicalConfig.model_validate_json(r[0]) for r in rows]
 
     def get(self, snapshot_id: str):
         with self.connect() as con:

@@ -408,12 +408,12 @@ test("遅いMatrix応答が新しい通信条件を上書きしない", async ({
   const oldRequest = page.waitForRequest(r => r.url().includes("/api/matrix?") && r.url().includes("port=80"));
   await page.getByLabel("ポート", { exact: true }).fill("80");
   await oldRequest;
+  const aborted = page.waitForEvent("requestfailed", r => r.url().includes("port=80"));
   await page.getByLabel("ポート", { exact: true }).fill("443");
   const cell = page.locator('button[title^="USER (core) → SERVER"]');
   await expect(cell).toContainText("TCP/443");
-  const oldResponse = page.waitForResponse(r => r.url().includes("/api/matrix?") && r.url().includes("port=80"));
+  await aborted;
   release();
-  await oldResponse;
   await expect(cell).toContainText("TCP/443");
   await expect(cell).toHaveClass(/allow/);
 });
@@ -494,4 +494,71 @@ test("遅いDiff応答が選択し直したSnapshotの結果を上書きしな�
   releaseSlow();
   await oldResponse;
   await expect(page.locator(".diff-summary .risk b")).toHaveText("12");
+});
+
+for (const width of [390, 1440]) {
+  test(`大規模Matrixは25件ずつ取得し全Segmentを検索できる ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const largeSegments = Array.from({ length: 60 }, (_, i) => ({ id: `s${i}`, name: `S${i}`, device: "core", type: "interface", networks: [`10.0.${i}.0/24`] }));
+    const requests: URL[] = [];
+    await page.route("**/api/matrix?**", async route => {
+      const url = new URL(route.request().url()); requests.push(url);
+      const src = url.searchParams.getAll("source_ids"), dst = url.searchParams.getAll("destination_ids");
+      const sources = src.length ? src : largeSegments.slice(0, 25).map(s => s.id);
+      const destinations = dst.length ? dst : largeSegments.slice(0, 25).map(s => s.id);
+      await route.fulfill({ json: { snapshot_id: "large", protocol: null, port: null, segments: largeSegments,
+        window: { source_ids: sources, destination_ids: destinations, total_cells: 3600, complete: false },
+        cells: sources.flatMap(source => destinations.map(destination => ({ source, destination, result: "ALLOW", allowed: [], denied: [], traces: [], policy_ids: [] }))),
+      } });
+    });
+    await page.reload();
+    if (width < 600 && !await page.locator(".app").evaluate(el => el.classList.contains("sidebar-collapsed")))
+      await page.getByRole("button", { name: "メニューを畳む" }).click();
+    await expect(page.locator(".matrix tbody tr")).toHaveCount(25);
+    await expect(page.locator(".matrix td")).toHaveCount(625);
+    expect(requests[0].searchParams.get("limit")).toBe("25");
+    await page.getByRole("button", { name: "送信元の次のページ" }).click();
+    await page.getByRole("button", { name: "宛先の次のページ" }).click();
+    await expect(page.locator('button[title="S25 (core) → S25 (core)"]')).toBeVisible();
+    expect(requests.at(-1)?.searchParams.get("snapshot_id")).toBe("large");
+    await page.screenshot({ path: `/tmp/netpolicy-scale-pages-${width}.png` });
+    await page.getByLabel("Segmentを検索").fill("S59");
+    await expect(page.locator('button[title="S59 (core) → S59 (core)"]')).toBeVisible();
+    await expect(page.locator(".matrix td")).toHaveCount(1);
+    expect(requests.at(-1)?.searchParams.getAll("source_ids")).toEqual(["s59"]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/netpolicy-scale-${width}.png`, fullPage: true });
+  });
+}
+
+test("大規模Matrixのページ取得エラーは再試行できる", async ({ page }) => {
+  const all = Array.from({ length: 26 }, (_, i) => ({ id: `s${i}`, name: `S${i}`, device: "core", type: "interface", networks: [] }));
+  let fail = true;
+  await page.route("**/api/matrix?**", async route => {
+    const q = new URL(route.request().url()).searchParams;
+    const sources = q.getAll("source_ids").length ? q.getAll("source_ids") : all.slice(0, 25).map(s => s.id);
+    const destinations = q.getAll("destination_ids").length ? q.getAll("destination_ids") : all.slice(0, 25).map(s => s.id);
+    if (sources[0] === "s25" && fail) { fail = false; await route.fulfill({ status: 500, body: "temporary error" }); return; }
+    await route.fulfill({ json: { snapshot_id: "large", segments: all,
+      window: { source_ids: sources, destination_ids: destinations, total_cells: 676, complete: false },
+      cells: sources.flatMap(source => destinations.map(destination => ({ source, destination, result: "ALLOW", allowed: [], denied: [], traces: [], policy_ids: [] }))) } });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "送信元の次のページ" }).click();
+  await expect(page.getByRole("alert")).toContainText("temporary error");
+  await expect(page.locator(".matrix")).toHaveCount(0);
+  await page.getByRole("button", { name: "再試行", exact: true }).click();
+  await expect(page.locator('button[title="S25 (core) → S0 (core)"]')).toBeVisible();
+});
+
+test("Parser Debugの全config取得は画面を開いたときだけ行う", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", request => requests.push(new URL(request.url()).pathname));
+  await page.reload();
+  await expect(page.locator(".matrix")).toBeVisible();
+  expect(requests.filter(path => path === "/api/parser/debug")).toHaveLength(0);
+  const debugRequest = page.waitForRequest(request => request.url().endsWith("/api/parser/debug"));
+  await page.getByRole("button", { name: "Parser Debug" }).click();
+  await debugRequest;
+  expect(requests.filter(path => path === "/api/parser/debug")).toHaveLength(1);
 });

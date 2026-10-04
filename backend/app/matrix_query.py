@@ -4,7 +4,7 @@ from __future__ import annotations
 from .models import CanonicalConfig, MatrixCell
 from .reachability import analyze_reachability
 from .path_results import aggregate_verdicts
-from .topology_graph import build_topology_model
+from .analysis_context import AnalysisContext
 
 PORT_PROTOCOLS = ("tcp", "udp", "sctp")
 SUPPORTED_PROTOCOLS = {*PORT_PROTOCOLS, "icmp", "icmpv6", "gre", "esp", "ah", "ospf", "igmp"}
@@ -24,28 +24,27 @@ def normalize_query(protocol: str | None, port: int | None) -> str | None:
 def build_query_matrix(
     configs: list[CanonicalConfig], protocol: str | None, port: int | None,
     source: str | None = None, destination: str | None = None,
+    *, source_ids: list[str] | None = None, destination_ids: list[str] | None = None,
 ) -> list[MatrixCell]:
     """Evaluate whole segment ranges, new connections, and unspecified source ports.
 
     A port-only query covers TCP, UDP and SCTP separately. Mixed outcomes stay
     PARTIAL; no branch can turn an uncertain result into a blanket ALLOW.
     """
-    topology = build_topology_model(configs)
+    context = AnalysisContext(configs)
     segments = [s for cfg in configs for s in cfg.segments]
     policies = {p.id: p for cfg in configs for p in cfg.policies}
     protocols = (protocol,) if protocol else PORT_PROTOCOLS
     cells = []
-    for src in segments:
-        if source is not None and src.id != source:
-            continue
-        for dst in segments:
-            if destination is not None and dst.id != destination:
-                continue
+    sources = [s for s in segments if (source is None or s.id == source) and (source_ids is None or s.id in source_ids)]
+    destinations = [s for s in segments if (destination is None or s.id == destination) and (destination_ids is None or s.id in destination_ids)]
+    for src in sources:
+        for dst in destinations:
             results, reasons, allowed, denied, traces, policy_ids = [], [], [], [], [], []
             ranges = []
             for transport in protocols:
                 label = f"{transport.upper()}/{port}" if port is not None else f"{transport.upper()}/ANY"
-                result = analyze_reachability(configs, src.id, dst.id, transport, port, topology=topology, include_topology=False)
+                result = analyze_reachability(configs, src.id, dst.id, transport, port, context=context, include_topology=False)
                 results.append(result["result"])
                 if result["result"] == "ALLOW":
                     allowed.append(label)

@@ -53,17 +53,35 @@ def build_topology_model(configs: list[CanonicalConfig]) -> TopologyData:
                 source=device_node(config.device.id), target=segment_node(segment.id),
                 type="owns", label=", ".join(interfaces) or "logical", confidence="EXACT",
             ))
-    for index, left in enumerate(segments):
-        for right in segments[index + 1:]:
-            if left.device == right.device or left.type == "local" or right.type == "local":
+    # Sweep address intervals so disjoint subnets never reach pair comparison.
+    # Preserve the original segment/network ordering in the public response.
+    intervals = []
+    for index, segment in enumerate(segments):
+        if segment.type == "local":
+            continue
+        for raw in segment.networks:
+            try:
+                network = ipaddress.ip_network(raw, strict=False)
+            except ValueError:
                 continue
-            networks = _overlap(left, right)
-            if networks:
-                edges.append(TopologyEdge(
-                    id=f"adjacent:{left.id}:{right.id}",
-                    source=segment_node(left.id), target=segment_node(right.id),
-                    type="adjacent", label=", ".join(networks), confidence="INFERRED",
-                ))
+            intervals.append((network.version, int(network.network_address), int(network.broadcast_address), index))
+    active = []
+    pairs = set()
+    for family, start, end, index in sorted(intervals):
+        active = [(f, stop, other) for f, stop, other in active if f == family and stop >= start]
+        for _, _, other in active:
+            if segments[index].device != segments[other].device:
+                pairs.add(tuple(sorted((index, other))))
+        active.append((family, end, index))
+    for left_index, right_index in sorted(pairs):
+        left, right = segments[left_index], segments[right_index]
+        networks = _overlap(left, right)
+        if networks:
+            edges.append(TopologyEdge(
+                id=f"adjacent:{left.id}:{right.id}",
+                source=segment_node(left.id), target=segment_node(right.id),
+                type="adjacent", label=", ".join(networks), confidence="INFERRED",
+            ))
     return TopologyData(
         nodes=nodes,
         edges=edges,

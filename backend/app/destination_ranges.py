@@ -43,7 +43,7 @@ def refine_destination(config: CanonicalConfig, vrf: str | None,
 
 
 def trace_destination_ranges(configs: list[CanonicalConfig], source: str, destination: str,
-                             flow: FlowState, topology: TopologyData, assume_session: bool) -> dict:
+                             flow: FlowState, topology: TopologyData, assume_session: bool, *, context=None) -> dict:
     from .path_traversal import trace_paths
 
     # Remove overlaps but preserve adjacent host endpoints (especially LOCAL
@@ -56,7 +56,7 @@ def trace_destination_ranges(configs: list[CanonicalConfig], source: str, destin
             disjoint.append(network)
     pending = deque(str(n) for n in sorted(disjoint, key=lambda n: int(n.network_address)))
     if not pending:
-        return trace_paths(configs, source, destination, flow, topology, assume_session)
+        return trace_paths(configs, source, destination, flow, topology, assume_session, context=context)
     paths = []
     complete = True
     attempts = 0
@@ -66,7 +66,7 @@ def trace_destination_ranges(configs: list[CanonicalConfig], source: str, destin
         narrowed = FlowState(original=packet, current=packet)
         attempts += 1
         try:
-            result = trace_paths(configs, source, destination, narrowed, topology, assume_session)
+            result = trace_paths(configs, source, destination, narrowed, topology, assume_session, context=context)
         except DestinationSplit as split:
             pending.extendleft(reversed(split.ranges))
             continue

@@ -42,6 +42,9 @@ export interface Cell {
   traces: Trace[];
 }
 export interface MatrixData {
+  protocol?: string | null;
+  port?: number | null;
+  window?: { source_ids: string[]; destination_ids: string[]; total_cells: number; complete: boolean };
   evaluation?: "policy_summary" | "path";
   snapshot_id: string | null;
   segments: Segment[];

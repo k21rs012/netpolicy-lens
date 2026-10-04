@@ -7,6 +7,8 @@ from datetime import datetime
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
+from .response_cache import ResponseCache
 
 from .analyzer import build_matrix
 from .matrix_query import build_query_matrix, normalize_query
@@ -20,6 +22,7 @@ from .topology import analyze_reachability, build_topology
 app = FastAPI(title="NetPolicy Lens API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://localhost:8080"], allow_methods=["*"], allow_headers=["*"])
 store = SnapshotStore()
+matrix_cache = ResponseCache()
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 50 * 1024 * 1024
 MAX_CONFIG_FILES = 500
@@ -166,23 +169,52 @@ def policies(snapshot_id: str | None = None, action: str | None = None, protocol
 
 
 def matrix_data(snapshot_id: str | None, protocol: str | None, port: int | None,
-                source: str | None = None, destination: str | None = None):
+                source: str | None = None, destination: str | None = None,
+                *, limit: int | None = None, source_ids: list[str] | None = None,
+                destination_ids: list[str] | None = None):
     try:
         protocol = normalize_query(protocol, port)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    cfgs, resolved = configs(snapshot_id)
+    resolved = snapshot_id or store.latest_id()
+    windowed = limit is not None or source_ids is not None or destination_ids is not None
+    cache_key = (store, resolved, protocol, port, limit, source, destination,
+                 tuple(source_ids) if source_ids is not None else None,
+                 tuple(destination_ids) if destination_ids is not None else None)
+    if windowed and resolved is not None and (cached := matrix_cache.get(cache_key)) is not None:
+        return cached
+    cfgs, resolved = configs(resolved)
+    segments = [s for c in cfgs for s in c.segments]
+    ids = [s.id for s in segments]
+    if source is not None:
+        source_ids = [source]
+    if destination is not None:
+        destination_ids = [destination]
+    if windowed:
+        if any(value not in ids for value in (source_ids or []) + (destination_ids or [])):
+            raise HTTPException(422, "Unknown segment in matrix window")
+        source_ids = list(dict.fromkeys(source_ids)) if source_ids is not None else ids[:limit or 25]
+        destination_ids = list(dict.fromkeys(destination_ids)) if destination_ids is not None else ids[:limit or 25]
     conditioned = protocol is not None or port is not None
-    cells = (build_query_matrix(cfgs, protocol, port, source, destination) if conditioned
-             else build_matrix(cfgs))
-    return {"snapshot_id": resolved, "evaluation": "path" if conditioned else "policy_summary",
-            "segments": [s for c in cfgs for s in c.segments], "cells": cells}
+    cells = (build_query_matrix(cfgs, protocol, port, source_ids=source_ids, destination_ids=destination_ids) if conditioned
+             else build_matrix(cfgs, source_ids, destination_ids))
+    result = {"snapshot_id": resolved, "evaluation": "path" if conditioned else "policy_summary",
+              "protocol": protocol, "port": port, "segments": segments, "cells": cells}
+    if windowed:
+        result["window"] = {"source_ids": source_ids, "destination_ids": destination_ids,
+                            "total_cells": len(ids) ** 2, "complete": len(source_ids) == len(ids) and len(destination_ids) == len(ids)}
+    if windowed and resolved is not None:
+        matrix_cache.put(cache_key, jsonable_encoder(result))
+    return result
 
 
 @app.get("/api/matrix")
 def matrix(snapshot_id: str | None = None, protocol: str | None = None,
-           port: int | None = Query(None, ge=0, le=65535)):
-    return matrix_data(snapshot_id, protocol, port)
+           port: int | None = Query(None, ge=0, le=65535),
+           limit: int | None = Query(None, ge=1, le=50),
+           source_ids: list[str] | None = Query(None, max_length=50),
+           destination_ids: list[str] | None = Query(None, max_length=50)):
+    return matrix_data(snapshot_id, protocol, port, limit=limit, source_ids=source_ids, destination_ids=destination_ids)
 
 
 @app.get("/api/matrix/{src}/{dst}")

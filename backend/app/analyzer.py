@@ -76,12 +76,13 @@ def policy_coverage(policy: Policy, src: Segment, dst: Segment) -> Coverage:
     return "PARTIAL" if "PARTIAL" in (src_coverage, dst_coverage) else "FULL"
 
 
-def effective_policies(policies: list[Policy], src: Segment, dst: Segment) -> list[tuple[Policy, Coverage, list[str]]]:
+def effective_policies(policies: list[Policy], src: Segment, dst: Segment, *, ordered: bool = False) -> list[tuple[Policy, Coverage, list[str]]]:
     """Apply first-match semantics per policy chain and exact service label."""
     seen: set[tuple[tuple[str, ...], str]] = set()
     effective: list[tuple[Policy, Coverage, list[str]]] = []
-    for policy in sorted((item for item in policies if item.enabled),
-                         key=lambda item: (item.device, policy_chain_key(item), policy_order(item))):
+    candidates = policies if ordered else sorted((item for item in policies if item.enabled),
+                         key=lambda item: (item.device, policy_chain_key(item), policy_order(item)))
+    for policy in candidates:
         if policy.chain_id and policy.chain_id.startswith("vyos:"):
             hook = "input" if dst.type == "local" else "output" if src.type == "local" else "forward"
             name = policy.chain_id.split(":", 2)[-1]
@@ -102,17 +103,29 @@ def effective_policies(policies: list[Policy], src: Segment, dst: Segment) -> li
     return effective
 
 
-def build_matrix(configs: list[CanonicalConfig]) -> list[MatrixCell]:
+def build_matrix(configs: list[CanonicalConfig], source_ids: list[str] | None = None,
+                 destination_ids: list[str] | None = None) -> list[MatrixCell]:
     segments = [s for cfg in configs for s in cfg.segments]
     definition_only_os = {"ios", "ios-xe", "nx-os", "aos-cx", "eos", "alliedware-plus", "rtx", "exos", "voss"}
     policies = [p for cfg in configs for p in cfg.policies
                 if not (p.direction == "unknown" and cfg.device.network_os in definition_only_os)]
+    policies = sorted((p for p in policies if p.enabled),
+                      key=lambda p: (p.device, policy_chain_key(p), policy_order(p)))
+    by_source: dict[str, list[Policy]] = {}
+    for policy in policies:
+        keys = policy.src_segments or [s.id for s in segments if s.device == policy.device]
+        for key in keys:
+            by_source.setdefault(key, []).append(policy)
+    source_set = set(source_ids) if source_ids is not None else None
+    destination_set = set(destination_ids) if destination_ids is not None else None
+    sources = segments if source_set is None else [s for s in segments if s.id in source_set]
+    destinations = segments if destination_set is None else [s for s in segments if s.id in destination_set]
     cells: list[MatrixCell] = []
-    for src in segments:
-        for dst in segments:
+    for src in sources:
+        for dst in destinations:
             if src.id == dst.id:
                 cells.append(MatrixCell(source=src.id, destination=dst.id, result="SAME_SEGMENT")); continue
-            matching = effective_policies(policies, src, dst)
+            matching = effective_policies(by_source.get(src.id, []), src, dst, ordered=True)
             allowed = [label for policy, _, labels in matching if policy.action == "permit" for label in labels]
             denied = [label for policy, _, labels in matching if policy.action in ("deny", "reject", "restrict") for label in labels]
             # A deny in any applied chain overrides a permit for that same

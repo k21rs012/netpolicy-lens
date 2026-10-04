@@ -31,8 +31,8 @@ class TraversalState(NamedTuple):
 
 
 def trace_paths(configs: list[CanonicalConfig], source: str, destination: str,
-                flow: FlowState, topology: TopologyData, assume_session: bool) -> dict:
-    graph = PathTopology(configs, topology, flow.current.ip_version)
+                flow: FlowState, topology: TopologyData, assume_session: bool, *, context=None) -> dict:
+    graph = context.graph(flow.current.ip_version) if context else PathTopology(configs, topology, flow.current.ip_version)
     segments, devices, adjacent = graph.segments, graph.devices, graph.adjacent
     # Do not deduplicate converging branches: they can carry different policy
     # history or NAT state even when they share the same segment and packet.

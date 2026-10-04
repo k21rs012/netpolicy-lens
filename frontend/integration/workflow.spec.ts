@@ -93,3 +93,26 @@ test("実API: FortiOS VIPの取り込み・変換後Policy・NAT表示を確認�
   await page.getByRole("button", { name: "経路を解析" }).click();
   await expect(page.locator(".path-verdict .status")).toHaveText("拒否");
 });
+
+test("実API: 大規模Matrixのページと検索は表示対象だけ解析する", async ({ page }) => {
+  let raw = "version 17.12\nhostname scale\n";
+  for (let i = 1; i <= 30; i++) raw += `vlan ${i}\n name NET${i}\ninterface Vlan${i}\n ip address 10.0.${i}.1 255.255.255.0\n ip access-group CHECK in\n`;
+  raw += "ip access-list extended CHECK\n 10 permit ip any any\n";
+  await page.goto("/");
+  await importConfig(page, raw, "scale");
+  await expect(page.locator(".matrix td")).toHaveCount(625);
+  await page.getByLabel("プロトコル", { exact: true }).selectOption("tcp");
+  await expect(page.locator(".matrix td")).toHaveCount(625);
+  const response = page.waitForResponse(r => r.url().includes("source_ids=scale-vlan-26"));
+  await page.getByRole("button", { name: "送信元の次のページ" }).click();
+  const data = await (await response).json();
+  expect(data.protocol).toBe("tcp");
+  expect(data.window.source_ids).toHaveLength(5);
+  expect(data.cells).toHaveLength(125);
+  await page.locator('button[title="NET26 (scale) → NET1 (scale)"]').click();
+  await expect(page.getByRole("dialog", { name: "通信判定の詳細" })).toContainText("TCP/ANY");
+  await page.getByRole("button", { name: "詳細を閉じる" }).click();
+  await page.getByLabel("Segmentを検索").fill("NET30");
+  await expect(page.locator(".matrix td")).toHaveCount(1);
+  await expect(page.locator('button[title="NET30 (scale) → NET30 (scale)"]')).toBeVisible();
+});

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 
 from .flow import create_flow
+from .analysis_context import AnalysisContext
 from .models import CanonicalConfig
 from .destination_ranges import trace_destination_ranges
 from .reachability_models import ReachabilityResult, TopologyData
@@ -23,16 +24,17 @@ def analyze_reachability(
     destination_ip: str | None = None,
     icmp_type: int | None = None,
     *, topology: TopologyData | None = None, include_topology: bool = True,
+    context: AnalysisContext | None = None,
 ) -> dict:
-    topology = topology if topology is not None else build_topology_model(configs)
+    topology = context.topology if context else topology if topology is not None else build_topology_model(configs)
     base = {
         "source": source, "destination": destination, "protocol": protocol,
         "port": port, "source_port": source_port, "ip_version": ip_version, "state": state,
         "assume_session": assume_session,
         "topology": topology if include_topology else TopologyData(),
     }
-    segment_map = {segment.id: segment for config in configs for segment in config.segments}
-    config_map = {config.device.id: config for config in configs}
+    segment_map = context.segments if context else {segment.id: segment for config in configs for segment in config.segments}
+    config_map = context.devices if context else {config.device.id: config for config in configs}
     if source not in segment_map or destination not in segment_map:
         raise ValueError("Segment not found")
     flow = create_flow(segment_map[source], segment_map[destination], protocol, port,
@@ -63,5 +65,5 @@ def analyze_reachability(
     if ip_version is None and len(families) > 1:
         return _result(**base, result="UNKNOWN", route_reason="複数のIP familyがあります。ip_versionを指定してください")
 
-    traced = trace_destination_ranges(configs, source, destination, flow, topology, assume_session)
+    traced = trace_destination_ranges(configs, source, destination, flow, topology, assume_session, context=context)
     return _result(**{**base, **traced})

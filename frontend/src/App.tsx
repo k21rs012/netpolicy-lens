@@ -54,8 +54,9 @@ export default function App() {
   });
   const {
     matrix, devices, policies, capabilities, debug, snapshots, loading,
-    protocol, setProtocol, port, setPort, error, refresh, loadSample, revision,
-  } = useAppData();
+    protocol, setProtocol, port, setPort, error, refresh, loadSample, revision, debugLoading,
+  } = useAppData(page);
+  const [visibleCells, setVisibleCells] = useState<Cell[]>([]);
   const [selected, setSelected] = useState<Cell | null>(null);
   useEffect(() => setSelected(null), [matrix, protocol, port]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -69,11 +70,11 @@ export default function App() {
   const title = nav.find((n) => n[0] === page)?.[1];
   const stats = useMemo(
     () => ({
-      allow: matrix.cells.filter((c) => c.result === "ALLOW").length,
-      deny: matrix.cells.filter((c) => c.result === "DENY").length,
-      unknown: matrix.cells.filter((c) => c.result === "UNKNOWN").length,
+      allow: visibleCells.filter((c) => c.result === "ALLOW").length,
+      deny: visibleCells.filter((c) => c.result === "DENY").length,
+      unknown: visibleCells.filter((c) => c.result === "UNKNOWN").length,
     }),
-    [matrix],
+    [visibleCells],
   );
   return (
     <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -166,17 +167,17 @@ export default function App() {
                 <Network />
               </div>
               <div>
-                <span>許可パス</span>
+                <span>許可（表示範囲）</span>
                 <b>{stats.allow}</b>
                 <Check />
               </div>
               <div>
-                <span>拒否パス</span>
+                <span>拒否（表示範囲）</span>
                 <b>{stats.deny}</b>
                 <ShieldCheck />
               </div>
               <div>
-                <span>要確認</span>
+                <span>要確認（表示範囲）</span>
                 <b>{stats.unknown}</b>
                 <CircleHelp />
               </div>
@@ -221,7 +222,7 @@ export default function App() {
                 解析結果を読み込み中
               </div>
             ) : error ? null : matrix.segments.length ? (
-              <Matrix data={matrix} onCell={setSelected} />
+              <Matrix data={matrix} onCell={setSelected} onVisibleCells={setVisibleCells} />
             ) : (
               <Empty load={loadSample} />
             )}
@@ -234,7 +235,7 @@ export default function App() {
           <Devices items={devices} onSelect={setSelectedDevice} />
         )}{" "}
         {page === "capabilities" && <Capabilities items={capabilities} />}{" "}
-        {page === "debug" && <Debug key={revision} data={debug} />}
+        {page === "debug" && (debugLoading ? <div className="loading" role="status">解析情報を読み込み中</div> : error ? null : <Debug key={revision} data={debug} />)}
         <footer className="main-footer">
           <span>
             <Database />

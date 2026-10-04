@@ -30,9 +30,11 @@ export function Empty({ load }: { load: () => void }) {
 export function Matrix({
   data,
   onCell,
+  onVisibleCells,
 }: {
   data: MatrixData;
   onCell: (c: Cell) => void;
+  onVisibleCells?: (cells: Cell[]) => void;
 }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [query, setQuery] = useState("");
@@ -82,14 +84,40 @@ export function Matrix({
       vlan,
     ],
   );
-  const ids = new Set(segments.map((s) => s.id));
-  const cells = data.cells.filter(
-    (c) =>
-      ids.has(c.source) &&
-      ids.has(c.destination) &&
-      (!result || c.result === result),
-  );
-  const filtered = { ...data, segments, cells };
+  const pageSize = 25;
+  const [sourcePage, setSourcePage] = useState(0);
+  const [destinationPage, setDestinationPage] = useState(0);
+  const [pageData, setPageData] = useState<{ base: MatrixData; key: string; data: MatrixData } | null>(null);
+  const [pageError, setPageError] = useState<{ key: string; message: string } | null>(null);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => { setSourcePage(0); setDestinationPage(0); }, [query, device, site, vendor, networkOs, type, vlan]);
+  const lastPage = Math.max(0, Math.ceil(segments.length / pageSize) - 1);
+  const srcPage = Math.min(sourcePage, lastPage), dstPage = Math.min(destinationPage, lastPage);
+  const sources = segments.slice(srcPage * pageSize, (srcPage + 1) * pageSize);
+  const destinations = segments.slice(dstPage * pageSize, (dstPage + 1) * pageSize);
+  const requestKey = JSON.stringify([sources.map(s => s.id), destinations.map(s => s.id)]);
+  const initialMatches = !data.window || requestKey === JSON.stringify([data.window.source_ids, data.window.destination_ids]);
+  const current = initialMatches ? data : pageData?.base === data && pageData.key === requestKey ? pageData.data : null;
+  useEffect(() => {
+    if (initialMatches || !sources.length || !destinations.length) return;
+    const controller = new AbortController();
+    setPageError(null);
+    const [srcIds, dstIds] = JSON.parse(requestKey) as [string[], string[]];
+    api.matrixWindow(data, srcIds, dstIds, controller.signal).then(value => {
+      if (!controller.signal.aborted) setPageData({ base: data, key: requestKey, data: value });
+    }).catch(cause => {
+      if (!controller.signal.aborted) setPageError({ key: requestKey, message: String(cause.message || cause) });
+    });
+    return () => controller.abort();
+  }, [data, requestKey, initialMatches, retry]);
+  const cellByPair = useMemo(() => new Map((current?.cells || []).map(cell =>
+    [JSON.stringify([cell.source, cell.destination]), cell])), [current]);
+  const visibleCells = useMemo(() => {
+    const [srcIds, dstIds] = JSON.parse(requestKey) as [string[], string[]];
+    const srcSet = new Set(srcIds), dstSet = new Set(dstIds);
+    return (current?.cells || []).filter(cell => srcSet.has(cell.source) && dstSet.has(cell.destination));
+  }, [current, requestKey]);
+  useEffect(() => onVisibleCells?.(visibleCells), [visibleCells, onVisibleCells]);
   const clear = () => {
     setQuery("");
     setDevice("");
@@ -256,7 +284,21 @@ export function Matrix({
           {segments.length} / {data.segments.length} segments
         </span>
       </div>
-      {segments.length ? (
+      {segments.length > pageSize && (
+        <nav className="matrix-pagination" aria-label="Matrixの表示範囲">
+          <div><span>送信元 {srcPage * pageSize + 1}–{srcPage * pageSize + sources.length} / {segments.length}</span>
+            <button disabled={!srcPage} onClick={() => setSourcePage(srcPage - 1)} aria-label="送信元の前のページ">前へ</button>
+            <button disabled={srcPage >= lastPage} onClick={() => setSourcePage(srcPage + 1)} aria-label="送信元の次のページ">次へ</button></div>
+          <div><span>宛先 {dstPage * pageSize + 1}–{dstPage * pageSize + destinations.length} / {segments.length}</span>
+            <button disabled={!dstPage} onClick={() => setDestinationPage(dstPage - 1)} aria-label="宛先の前のページ">前へ</button>
+            <button disabled={dstPage >= lastPage} onClick={() => setDestinationPage(dstPage + 1)} aria-label="宛先の次のページ">次へ</button></div>
+          <small>25 × 25件ずつ解析します。判定結果の絞り込み・集計は表示範囲が対象です。</small>
+        </nav>
+      )}
+      {segments.length && !current ? (
+        pageError?.key === requestKey ? <div role="alert" className="matrix-page-message">{pageError.message}<button onClick={() => setRetry(value => value + 1)}>再試行</button></div>
+          : <div role="status" className="matrix-page-message">表示範囲を解析中</div>
+      ) : segments.length ? (
         <div className="matrix-wrap">
           <table className="matrix">
             <thead>
@@ -264,7 +306,7 @@ export function Matrix({
                 <th className="corner">
                   送信元 <ChevronRight /> 宛先
                 </th>
-                {filtered.segments.map((s) => (
+                {destinations.map((s) => (
                   <th key={s.id}>
                     <span>{s.name}</span>
                     <small>
@@ -278,7 +320,7 @@ export function Matrix({
               </tr>
             </thead>
             <tbody>
-              {filtered.segments.map((src) => (
+              {sources.map((src) => (
                 <tr key={src.id}>
                   <th>
                     <span>{src.name}</span>
@@ -286,10 +328,9 @@ export function Matrix({
                       {src.device} · {src.networks[0] || "no subnet"}
                     </small>
                   </th>
-                  {filtered.segments.map((dst) => {
-                    const c = filtered.cells.find(
-                      (x) => x.source === src.id && x.destination === dst.id,
-                    );
+                  {destinations.map((dst) => {
+                    const found = cellByPair.get(JSON.stringify([src.id, dst.id]));
+                    const c = found && (!result || found.result === result) ? found : undefined;
                     return (
                       <td key={dst.id}>
                         {c ? (

@@ -18,10 +18,18 @@ const json = async <T>(url: string, init?: RequestInit): Promise<T> => {
   return r.json();
 };
 export const api = {
-  matrix: (protocol = "", port = "") =>
+  matrix: (protocol = "", port = "", signal?: AbortSignal) =>
     json<MatrixData>(
-      `/api/matrix?protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}`,
+      `/api/matrix?limit=25&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}`, { signal },
     ),
+  matrixWindow: (data: MatrixData, sources: string[], destinations: string[], signal: AbortSignal) => {
+    const query = new URLSearchParams({ limit: "25", protocol: data.protocol || "" });
+    if (data.snapshot_id) query.set("snapshot_id", data.snapshot_id);
+    if (data.port != null) query.set("port", String(data.port));
+    sources.forEach(id => query.append("source_ids", id));
+    destinations.forEach(id => query.append("destination_ids", id));
+    return json<MatrixData>(`/api/matrix?${query}`, { signal });
+  },
   devices: () => json<{ items: Device[] }>("/api/devices"),
   device: (id: string) => json<DeviceDetail>(`/api/devices/${encodeURIComponent(id)}`),
   policies: () => json<{ items: Policy[] }>("/api/policies"),
@@ -29,7 +37,7 @@ export const api = {
   warnings: (device = "") =>
     json<{ items: ParserWarning[] }>(`/api/parser/warnings?device=${encodeURIComponent(device)}`),
   snapshots: () => json<Snapshot[]>("/api/snapshots"),
-  debug: () => json<any>("/api/parser/debug"),
+  debug: (signal?: AbortSignal) => json<any>("/api/parser/debug", { signal }),
   sample: () => json<any>("/api/sample/load", { method: "POST" }),
   diff: (before: string, after: string) =>
     json<DiffData>(

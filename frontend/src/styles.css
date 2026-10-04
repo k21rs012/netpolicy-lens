@@ -219,3 +219,9 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 .destination-ranges code { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
 .destination-ranges small { flex-basis: 100%; overflow-wrap: anywhere; }
 .path-options small { overflow-wrap: anywhere; min-width: 0; }
+
+.matrix-pagination { margin: 12px 28px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+.matrix-pagination > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.matrix-pagination small { flex-basis: 100%; color: var(--muted); }
+.matrix-page-message { margin: 24px 28px; display: flex; flex-wrap: wrap; gap: 12px; overflow-wrap: anywhere; }
+@media(max-width:600px) { .matrix-pagination, .matrix-page-message { margin-inline: 16px; } }
