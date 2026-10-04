@@ -191,3 +191,39 @@ test("実API: Snapshot切替・名前変更・削除・最後のSnapshot削除",
   await page.getByRole('button', { name: 'ポリシーマトリクス', exact: true }).click();
   await expect(page.getByText('まだネットワークがありません')).toBeVisible();
 });
+
+
+test("実API: Policyの宛先範囲をPath・Matrix・Diffで比較できる", async ({ page }) => {
+  await page.goto("/");
+  await importConfig(page, original.replace("10.0.9.0 0.0.0.255 eq 443", "10.0.9.0 0.0.0.127 eq 443"), "lower-half");
+  await page.getByLabel("ポート", { exact: true }).fill("443");
+  const cell = page.locator('button[title^="USERS (audit) → SERVERS"]');
+  await expect(cell).toHaveClass(/partial/);
+  await cell.click();
+  await expect(page.getByLabel("宛先範囲別の判定")).toContainText("10.0.9.0/25");
+  await expect(page.getByLabel("宛先範囲別の判定")).toContainText("10.0.9.128/25");
+  await page.locator(".shade").click({ position: { x: 5, y: 5 } });
+  await page.getByRole("button", { name: "Topology / Path" }).click();
+  await page.getByLabel("Source", { exact: true }).selectOption("audit-vlan-10");
+  await page.getByLabel("Destination", { exact: true }).selectOption("audit-vlan-20");
+  await page.getByRole("button", { name: "経路を解析" }).click();
+  await expect(page.getByRole("button", { name: "経路 1: ALLOW", exact: true })).toContainText("10.0.9.0/25");
+  await expect(page.getByRole("button", { name: "経路 2: DENY", exact: true })).toContainText("10.0.9.128/25");
+  await importConfig(page, original.replace("10.0.9.0 0.0.0.255 eq 443", "10.0.9.128 0.0.0.127 eq 443"), "upper-half");
+  await page.getByRole("button", { name: "Snapshot Diff" }).click();
+  await page.getByLabel("比較Protocol").selectOption("tcp");
+  await page.getByLabel("比較Port").fill("443");
+  await page.getByRole("button", { name: "条件を適用" }).click();
+  await expect(page.locator(".diff-query-scope")).toHaveText("経路評価: TCP / 443");
+  const row = page.locator(".comm-change").filter({ hasText: "USERS" }).filter({ hasText: "SERVERS" }).first();
+  await expect(row.locator(".result-shift .status")).toHaveCount(2);
+  await row.getByText("宛先範囲ごとの変更前後").click();
+  await expect(row.locator(".diff-ranges")).toContainText("10.0.9.128/25");
+  await expect(row.locator(".diff-ranges")).toContainText("10.0.9.0/25");
+  await page.setViewportSize({ width: 390, height: 1000 });
+  if (!await page.locator(".app").evaluate(el => el.classList.contains("sidebar-collapsed")))
+    await page.getByRole("button", { name: "メニューを畳む" }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "/tmp/netpolicy-policy-range-diff.png", fullPage: true, animations: "disabled" });
+});

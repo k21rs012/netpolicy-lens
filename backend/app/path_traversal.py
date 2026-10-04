@@ -64,7 +64,7 @@ def trace_paths(configs: list[CanonicalConfig], source: str, destination: str,
             continue
         config = devices[ingress.device]
         device_path = [*path, f"device:{config.device.id}"]
-        dnat = NatStage(packet) if ingress.type == "local" else apply_nat_stage(config, packet, ingress, None, "destination")
+        dnat = NatStage(packet) if ingress.type == "local" else apply_nat_stage(config, packet, ingress, None, "destination", original_destination=flow.original.destination_addresses)
         routed_packet = dnat.packet
         target = segments[destination].model_copy(update={"id": "current-target", "device": "", "networks": list(routed_packet.destination_addresses)})
         if dnat.blocked:
@@ -101,7 +101,7 @@ def trace_paths(configs: list[CanonicalConfig], source: str, destination: str,
             policy_config = fortios_policy_view(config, dnat.effects)
             step = evaluate_device(policy_config, ingress, egress, routed_packet.protocol, routed_packet.destination_port,
                                    routed_packet.state, assume_session, routed_packet.source_port, routed_packet.ip_version,
-                                   packet=routed_packet)
+                                   packet=routed_packet, original_destination=flow.original.destination_addresses)
             step.flow = FlowState(original=flow.original, current=routed_packet)
             step.packet_in, step.packet_out = packet, routed_packet
             step.route, step.next_hop, step.nat = candidate.evidence, candidate.next_hop, list(dnat.effects)
@@ -115,7 +115,7 @@ def trace_paths(configs: list[CanonicalConfig], source: str, destination: str,
             if egress.type == "local":
                 finish(path_verdict(next_steps, branch_uncertain), routed_packet, next_path, next_steps)
                 continue
-            snat = apply_nat_stage(config, routed_packet, ingress, egress, "source", step.policy)
+            snat = apply_nat_stage(config, routed_packet, ingress, egress, "source", step.policy, original_destination=flow.original.destination_addresses)
             step.nat.extend(snat.effects)
             if snat.blocked:
                 step.result, step.reason = "PARTIAL", snat.effects[-1].note or "NAT unresolved"

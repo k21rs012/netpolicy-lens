@@ -109,7 +109,7 @@ connected/static routeの最長プレフィックス一致とmetricを使い、�
 
 全候補の判定が同じならその判定を返し、異なる場合はPARTIALに集約します。ループや未解決next-hopも結果に残します。探索は128経路・2,048状態・32 hopを上限とし、再帰next-hopにも回数・深さの上限を設けています。上限到達時はPARTIALとし、未評価候補があることを表示します。
 
-宛先範囲内で有効なstatic route・connected subnetの条件が変わる場合は、IPv4/IPv6のCIDRに自動分割し、各範囲を送信元から再評価します。Pathの候補経路と条件付きMatrixの詳細に、NAT前の宛先範囲と判定を表示します。ECMPも範囲ごとに評価し、結果が混在する場合は全体をPARTIALにします。同一prefix長のstatic DNATは変換後の経路境界を変換前に戻して分割します。最大128回の再評価・128候補経路で打ち切り、残った範囲をPARTIALとして表示します。Policy・NATの部分一致条件そのものの自動分割は対象外です。動的ルーティングの実RIB、PBRの未対応match、SD-WAN固有の選択条件、実機のECMPハッシュ・分配率は再現しません。
+宛先範囲内で有効なstatic route・connected subnetの条件が変わる場合は、IPv4/IPv6のCIDRに自動分割し、各範囲を送信元から再評価します。Pathの候補経路と条件付きMatrixの詳細に、NAT前の宛先範囲と判定を表示します。ECMPも範囲ごとに評価し、結果が混在する場合は全体をPARTIALにします。同一prefix長のstatic DNATは変換後の経路境界を変換前に戻して分割します。最大128回の再評価・128候補経路で打ち切り、残った範囲をPARTIALとして表示します。評価対象となったPolicy・NATの宛先IP条件でも分割します。PolicyのIPv4/IPv6 CIDR・host・IP範囲・アドレスグループ・否定条件、NATの解決可能な宛先CIDR・host・object・除外条件が対象です。ルール順序・jump先を保ち、後段で見つけた境界も送信元へ戻して再評価します。送信元IP・port範囲は分割しません。動的ルーティングの実RIB、PBRの未対応match、SD-WAN固有の選択条件、実機のECMPハッシュ・分配率は再現しません。
 
 ### NAT
 
@@ -123,7 +123,7 @@ connected/static routeの最長プレフィックス一致とmetricを使い、�
 
 単一IP・portへの変換、NAT除外、ルール順序、Interface・IP family・Protocol・port条件、SRXの同じprefix長のstatic NATと逆方向マッピングを扱います。Policyで拒否した通信にSNATは適用しません。ECMPでも経路ごとに変換結果を保持します。
 
-複数pool、範囲割り当て、部分一致、未解決object、未対応条件はPARTIALとして扱います。動的PATでは送信元portを未確定として引き継ぎ、PARTIALにします。外側InterfaceのIPが不明なmasqueradeも断定しません。
+複数pool、範囲割り当て、送信元の部分一致、未解決object、未対応条件はPARTIALとして扱います。宛先の部分一致は、解決できるアドレス境界で分割してNATを再評価します。動的PATでは送信元portを未確定として引き継ぎ、PARTIALにします。外側InterfaceのIPが不明なmasqueradeも断定しません。
 
 FortiOSではIPv4の単一IP VIP、TCP/UDPの単一port転送、VIP group、単一IPのoverload/one-to-one IP pool、central SNATのInterface・アドレス・protocol・port条件とNAT除外に対応します。central NAT有効時はPolicy側のSNATを無視し、central-snat-mapの順序（moveを含む）で評価します。VIP名とmapped IPは区別し、VIP用Policyで内部IPへの直接通信を許可しません。Interfaceのsubnet外にある公開VIPは「VIP · 名前」の論理Segmentとして宛先に選択できます。Policyのfixedportまたはcentral SNATの明示的な単一port変換は確定値として扱い、port-preserveだけでは動的PATを確定しません。設定を再取り込みすると既存Snapshotとは別に新しい解析モデルが保存されます。
 
@@ -226,7 +226,7 @@ GitHub ActionsではBackendテスト、Frontendビルド・画面E2E・実API統
 
 ## 通信条件付きSnapshot Diff
 
-Snapshot Diffで比較元・比較先を選び、Protocol・Portを入力して **条件を適用** を押します。入力欄は編集中の条件で、結果の上には適用済み条件を表示します。ProtocolまたはPort指定時は両SnapshotをPathと同じ処理で解析し、NAT・ECMP・経路変更も判定に反映します。Segment全体・新規通信・送信元port未指定が対象です。Portだけ指定するとTCP・UDP・SCTPを評価します。PARTIAL・UNKNOWN・NO_ROUTEは許可や拒否と区別して表示します。
+Snapshot Diffで比較元・比較先を選び、Protocol・Portを入力して **条件を適用** を押します。入力欄は編集中の条件で、結果の上には適用済み条件を表示します。ProtocolまたはPort指定時は両SnapshotをPathと同じ処理で解析し、NAT・ECMP・経路変更も判定に反映します。Segment全体・新規通信・送信元port未指定が対象です。Portだけ指定するとTCP・UDP・SCTPを評価します。PARTIAL・UNKNOWN・NO_ROUTEは許可や拒否と区別して表示します。全体判定がPARTIALのままでも、宛先範囲ごとの判定が変われば通信差分に表示します。「宛先範囲ごとの変更前後」でNAT前の範囲と判定を確認できます。新規許可・拒否の集計はSegment全体で確定したサービスが対象で、部分範囲の件数ではありません。
 
 Policy・Networkの設定差分は通信条件で絞り込みません。両条件を空にして適用すると従来の設定概要へ戻ります。条件付き比較は全Segmentの組み合わせを解析するため、大規模構成では時間がかかる場合があります。APIは `GET /api/diff?before={id}&after={id}&protocol=tcp&port=443` です。
 

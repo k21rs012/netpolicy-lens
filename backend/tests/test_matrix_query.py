@@ -38,7 +38,11 @@ def test_query_matches_path_and_preserves_decisive_rule(rules, port, expected, r
     path = analyze_reachability([cfg], 'edge-user', 'edge-server', 'tcp', port)
     assert cell.result == expected == path['result']
     assert cell.policy_ids == ([f'edge:EDGE-IN:{rule}'] if rule else [])
-    assert cell.traces[0]['result'] == expected
+    if rules[0].dst == ['10.0.2.10/32']:
+        assert {item['result'] for item in cell.destination_ranges} == {'ALLOW', 'DENY'}
+        assert any(item['addresses'] == ['10.0.2.10/32'] and item['result'] == 'ALLOW' for item in cell.destination_ranges)
+    else:
+        assert cell.traces[0]['result'] == expected
     assert cell.traces[0]['reason'] == path['steps'][0]['reason']
     assert cell.evaluation == 'path'
     if expected == 'PARTIAL':

@@ -230,6 +230,11 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
                     ))}
                   </div>
                   {data.evaluation === "path" && <details><summary>変更前後の判定根拠</summary><p>変更前: {row.before_reason || "対象なし"}</p><p>変更後: {row.after_reason || "対象なし"}</p></details>}
+                  {data.evaluation === "path" && <details className="diff-ranges"><summary>宛先範囲ごとの変更前後</summary>
+                    {([ ["変更前", row.before_ranges], ["変更後", row.after_ranges] ] as const).map(([label, ranges]) => <div key={label}><b>{label}</b>
+                      {ranges?.length ? ranges.map((range, index) => <p key={index}><code>{range.addresses.join(", ")}</code> · {range.protocol.toUpperCase()} · <Status value={range.result} /></p>) : <p>対象なし</p>}
+                    </div>)}
+                  </details>}
                   {row.after_traces[0]?.trace && (
                     <code>
                       {row.after_traces[0].trace.source_file}:

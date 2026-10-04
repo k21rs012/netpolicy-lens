@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+import ipaddress
 
 from .analyzer import build_matrix
 from .models import CanonicalConfig
@@ -9,7 +10,7 @@ from .matrix_query import build_query_matrix
 
 POLICY_FIELDS = (
     "src", "dst", "src_segments", "dst_segments", "protocol", "src_ports", "dst_ports",
-    "action", "direction", "interface", "from_zone", "to_zone",
+    "action", "direction", "interface", "from_zone", "to_zone", "src_negate", "dst_negate",
 )
 INTERFACE_FIELDS = ("description", "addresses", "vlan_id", "trunk_vlans", "zone", "segment_id", "acl_in", "acl_out")
 VLAN_FIELDS = ("name", "subnets", "gateway")
@@ -43,6 +44,19 @@ def _object_diff(
     return result
 
 
+def _range_signature(cell) -> tuple:
+    # Ignore partition shape, path order and prose: compare address coverage
+    # per protocol/verdict, including all ECMP outcomes for each address.
+    groups = {}
+    for item in cell.destination_ranges if cell else []:
+        for value in item["addresses"]:
+            network = ipaddress.ip_network(value)
+            key = (item["protocol"], item["result"], network.version)
+            groups.setdefault(key, []).append(network)
+    return tuple((key, tuple(map(str, ipaddress.collapse_addresses(values))))
+                 for key, values in sorted(groups.items()))
+
+
 def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig],
                       protocol: str | None = None, port: int | None = None) -> dict[str, Any]:
     conditioned = protocol is not None or port is not None
@@ -61,7 +75,8 @@ def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig
         new_allow = sorted(new_allowed - old_allowed); new_deny = sorted(new_denied - old_denied)
         removed_allow = sorted(old_allowed - new_allowed); removed_deny = sorted(old_denied - new_denied)
         result_changed = (old.result if old else None) != (new.result if new else None)
-        if not (new_allow or new_deny or removed_allow or removed_deny or result_changed):
+        range_changed = conditioned and _range_signature(old) != _range_signature(new)
+        if not (new_allow or new_deny or removed_allow or removed_deny or result_changed or range_changed):
             continue
         src, dst = all_segments.get(key[0]), all_segments.get(key[1])
         communications.append({
@@ -72,6 +87,8 @@ def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig
             "new_allow": new_allow, "new_deny": new_deny,
             "removed_allow": removed_allow, "removed_deny": removed_deny,
             "after_traces": new.traces if new else [],
+            "before_ranges": old.destination_ranges if old else [],
+            "after_ranges": new.destination_ranges if new else [],
             "before_reason": old.reason if old else None, "after_reason": new.reason if new else None,
         })
 

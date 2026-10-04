@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 
 from .analyzer import policy_coverage
+from .destination_ranges import refine_boundaries
 from .models import CanonicalConfig, Confidence, Policy, Segment
 from .policy_utils import packet_matches, policy_chain_key, policy_order
 from .reachability_models import ChainVerdict, HopResult, Packet
@@ -118,6 +119,7 @@ def evaluate_chain(
     visited: set[tuple[str, ...]] | None = None,
     source_port: int | None = None,
     packet: Packet | None = None,
+    original_destination: tuple[str, ...] = (),
 ) -> ChainVerdict:
     rules = sorted(rules, key=policy_order)
     key = policy_chain_key(rules[0])
@@ -138,6 +140,8 @@ def evaluate_chain(
         )
         if coverage == "NONE" or not packet_matches(resolved, protocol, port, source_port, packet.icmp_type if packet else None):
             continue
+        if packet is not None and coverage == "PARTIAL":
+            refine_boundaries(original_destination, packet.destination_addresses, resolved.dst)
         suffix = "（Segmentの一部に一致）" if coverage == "PARTIAL" else ""
         source_port_unknown = source_port is None and not any(
             value.lower() in {"any", "*"} for value in policy.src_ports
@@ -168,7 +172,7 @@ def evaluate_chain(
             if target:
                 jumped = evaluate_chain(
                     config, all_chains[target], ingress, egress, protocol, port,
-                    state, all_chains, visited.copy(), source_port, packet,
+                    state, all_chains, visited.copy(), source_port, packet, original_destination,
                 )
                 if jumped.result == "RETURN":
                     continue
@@ -191,7 +195,7 @@ def evaluate_chain(
         if target:
             return evaluate_chain(
                 config, all_chains[target], ingress, egress, protocol, port,
-                state, all_chains, visited.copy(), source_port, packet,
+                state, all_chains, visited.copy(), source_port, packet, original_destination,
             )
         return ChainVerdict(result="UNKNOWN", reason="default jump targetを解決できません", chain=key[-1])
     if config.device.network_os == "routeros" and not any(rule.entrypoint for rule in rules):
@@ -231,6 +235,7 @@ def evaluate_device(
     source_port: int | None = None,
     ip_version: int | None = None,
     packet: Packet | None = None,
+    original_destination: tuple[str, ...] = (),
 ) -> HopResult:
     if packet is not None:
         protocol, port = packet.protocol, packet.destination_port
@@ -281,7 +286,7 @@ def evaluate_device(
             reason="適用Policyの暗黙deny" if firewall_default_deny else "一致する適用Policyを確認できません",
         )
     verdicts = [evaluate_chain(config, rules, ingress, egress, protocol, port, state, chains,
-                               source_port=source_port, packet=packet)
+                               source_port=source_port, packet=packet, original_destination=original_destination)
                 for rules in entry_chains.values()]
     values = {item.result for item in verdicts}
     result = (

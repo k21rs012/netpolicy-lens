@@ -120,6 +120,8 @@ export interface Snapshot {
   device_count: number;
 }
 export interface CommunicationDiff {
+  before_ranges?: Cell["destination_ranges"];
+  after_ranges?: Cell["destination_ranges"];
   before_reason?: string | null;
   after_reason?: string | null;
   source: string;

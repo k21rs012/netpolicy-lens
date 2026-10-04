@@ -23,23 +23,40 @@ class DestinationSplit(Exception):
 
 def refine_destination(config: CanonicalConfig, vrf: str | None,
                        original: tuple[str, ...], current: tuple[str, ...]) -> None:
-    if len(original) != 1 or len(current) != 1:
-        return
-    before, after = (ipaddress.ip_network(values[0]) for values in (original, current))
-    if before.version != after.version or before.num_addresses != after.num_addresses:
-        return
     boundaries = [r.destination for r in active_routes(config, vrf)]
     # Local interface hosts are opt-in endpoints, not subnet forwarding targets.
     boundaries += [n for s in config.segments if s.vrf == vrf and s.type != "local" for n in s.networks]
-    for value in boundaries:
-        boundary = ipaddress.ip_network(value, strict=False)
-        if boundary.version != after.version or boundary == after or not boundary.subnet_of(after):
-            continue
-        address_type = ipaddress.IPv4Address if before.version == 4 else ipaddress.IPv6Address
-        start = int(before.network_address) + int(boundary.network_address) - int(after.network_address)
-        projected = ipaddress.ip_network((address_type(start), boundary.prefixlen))
-        pieces = sorted([projected, *before.address_exclude(projected)], key=lambda n: int(n.network_address))
-        raise DestinationSplit(tuple(map(str, pieces)))
+    refine_boundaries(original, current, boundaries)
+
+
+def refine_boundaries(original: tuple[str, ...], current: tuple[str, ...], values: list[str]) -> None:
+    """Project known address boundaries back to the query, without host enumeration.
+
+    Unknown objects remain unknown to the evaluator. Splitting a known member
+    never makes an unresolved condition exact.
+    """
+    if len(original) != 1 or len(current) != 1:
+        return
+    before, after = (ipaddress.ip_network(scope[0]) for scope in (original, current))
+    if before.version != after.version or before.num_addresses != after.num_addresses:
+        return
+    for value in values:
+        try:
+            boundaries = [ipaddress.ip_network(value, strict=False)]
+        except ValueError:
+            try:
+                first, last = value.split("-", 1)
+                boundaries = list(ipaddress.summarize_address_range(ipaddress.ip_address(first), ipaddress.ip_address(last)))
+            except ValueError:
+                continue
+        for boundary in boundaries:
+            if boundary.version != after.version or boundary == after or not boundary.subnet_of(after):
+                continue
+            address_type = ipaddress.IPv4Address if before.version == 4 else ipaddress.IPv6Address
+            start = int(before.network_address) + int(boundary.network_address) - int(after.network_address)
+            projected = ipaddress.ip_network((address_type(start), boundary.prefixlen))
+            pieces = sorted([projected, *before.address_exclude(projected)], key=lambda n: int(n.network_address))
+            raise DestinationSplit(tuple(map(str, pieces)))
 
 
 def trace_destination_ranges(configs: list[CanonicalConfig], source: str, destination: str,

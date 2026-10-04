@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 
 from .models import CanonicalConfig, NATRule, Segment
+from .destination_ranges import refine_boundaries
 from .policy_utils import SERVICE_PORTS, port_matches
 from .reachability_models import NatEffect, Packet
 
@@ -134,7 +135,8 @@ def _translate(config: CanonicalConfig, value: str, original: str, scope: tuple[
 
 
 def apply_nat_stage(config: CanonicalConfig, packet: Packet, ingress: Segment,
-                    egress: Segment | None, stage: str, policy_id: str | None = None) -> NatStage:
+                    egress: Segment | None, stage: str, policy_id: str | None = None,
+                    *, original_destination: tuple[str, ...] = ()) -> NatStage:
     legacy = any(r.trace and r.semantics_version < 1 for r in config.nat if not r.disabled)
     if stage == "destination" and (config.device.network_os not in ORDERS or legacy):
         active = [r for r in config.nat if not r.disabled]
@@ -164,8 +166,19 @@ def apply_nat_stage(config: CanonicalConfig, packet: Packet, ingress: Segment,
         rules.sort(key=lambda r: (r.type != "static", r.sequence if r.sequence is not None else 2**31))
     else:
         rules.sort(key=lambda r: r.sequence if r.sequence is not None else 2**31)
+    def refine_rule(rule: NATRule) -> None:
+        if _coverage(config, rule.original_dst, packet.destination_addresses) != "PARTIAL":
+            return
+        try:
+            values = _addresses(config, rule.original_dst.lstrip("!"))
+        except ValueError:
+            return
+        refine_boundaries(original_destination, packet.destination_addresses, values)
+
     if config.device.network_os == "fortios" and stage == "destination":
         matching = [r for r in rules if r.fortios_kind == "vip" and _match(config, r, packet, ingress, egress) != "NONE"]
+        for rule in matching:
+            refine_rule(rule)
         if len(matching) > 1:
             return NatStage(packet, [NatEffect(name=" / ".join(r.name for r in matching), type="destination",
                 stage="destination", before=packet, confidence="PARTIAL", note="複数VIPが重複一致し、適用優先順位を確定できません")], blocked=True)
@@ -175,6 +188,7 @@ def apply_nat_stage(config: CanonicalConfig, packet: Packet, ingress: Segment,
         match = _match(config, rule, packet, ingress, egress)
         if match == "NONE":
             continue
+        refine_rule(rule)
         effect = NatEffect(name=rule.name, type=rule.type, stage=stage,
                            translated_src=rule.translated_src, translated_dst=rule.translated_dst,
                            translated_port=rule.translated_port, before=packet, trace=rule.trace,
