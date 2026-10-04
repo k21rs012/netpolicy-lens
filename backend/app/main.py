@@ -162,7 +162,12 @@ def delete_snapshot(snapshot_id: str):
 
 
 @app.get("/api/diff")
-def snapshot_diff(before: str | None = None, after: str | None = None):
+def snapshot_diff(before: str | None = None, after: str | None = None,
+                  protocol: str | None = None, port: int | None = Query(None, ge=0, le=65535)):
+    try:
+        protocol = normalize_query(protocol, port)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     available = store.list()
     if not before or not after:
         if len(available) < 2:
@@ -174,7 +179,7 @@ def snapshot_diff(before: str | None = None, after: str | None = None):
         raise HTTPException(404, "Snapshot not found")
     if before == after:
         raise HTTPException(422, "異なるSnapshotを選択してください")
-    result = compare_snapshots(store.load(before), store.load(after))
+    result = compare_snapshots(store.load(before), store.load(after), protocol, port)
     return {"before": before_meta, "after": after_meta, **result}
 
 

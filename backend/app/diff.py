@@ -4,6 +4,7 @@ from typing import Any, Callable
 
 from .analyzer import build_matrix
 from .models import CanonicalConfig
+from .matrix_query import build_query_matrix
 
 
 POLICY_FIELDS = (
@@ -42,12 +43,16 @@ def _object_diff(
     return result
 
 
-def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig]) -> dict[str, Any]:
+def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig],
+                      protocol: str | None = None, port: int | None = None) -> dict[str, Any]:
+    conditioned = protocol is not None or port is not None
+    def cells(configs):
+        return build_query_matrix(configs, protocol, port) if conditioned else build_matrix(configs)
     before_segments = {segment.id: segment for config in before for segment in config.segments}
     after_segments = {segment.id: segment for config in after for segment in config.segments}
     all_segments = {**before_segments, **after_segments}
-    before_cells = {(cell.source, cell.destination): cell for cell in build_matrix(before)}
-    after_cells = {(cell.source, cell.destination): cell for cell in build_matrix(after)}
+    before_cells = {(cell.source, cell.destination): cell for cell in cells(before)}
+    after_cells = {(cell.source, cell.destination): cell for cell in cells(after)}
     communications: list[dict[str, Any]] = []
     for key in sorted(before_cells.keys() | after_cells.keys()):
         old, new = before_cells.get(key), after_cells.get(key)
@@ -55,7 +60,7 @@ def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig
         old_denied, new_denied = set(old.denied if old else []), set(new.denied if new else [])
         new_allow = sorted(new_allowed - old_allowed); new_deny = sorted(new_denied - old_denied)
         removed_allow = sorted(old_allowed - new_allowed); removed_deny = sorted(old_denied - new_denied)
-        result_changed = bool(old and new and old.result != new.result)
+        result_changed = (old.result if old else None) != (new.result if new else None)
         if not (new_allow or new_deny or removed_allow or removed_deny or result_changed):
             continue
         src, dst = all_segments.get(key[0]), all_segments.get(key[1])
@@ -67,6 +72,7 @@ def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig
             "new_allow": new_allow, "new_deny": new_deny,
             "removed_allow": removed_allow, "removed_deny": removed_deny,
             "after_traces": new.traces if new else [],
+            "before_reason": old.reason if old else None, "after_reason": new.reason if new else None,
         })
 
     before_policies = [p for config in before for p in config.policies]
@@ -86,6 +92,8 @@ def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig
     )
     network = interfaces + vlans + zones
     return {
+        "evaluation": "path" if conditioned else "policy_summary",
+        "protocol": protocol, "port": port,
         "summary": {
             "new_allow": sum(len(x["new_allow"]) for x in communications),
             "new_deny": sum(len(x["new_deny"]) for x in communications),

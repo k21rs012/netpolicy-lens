@@ -47,9 +47,10 @@ export const api = {
   },
   debug: (signal?: AbortSignal, snapshotId = "") => json<any>(snapshotUrl("/api/parser/debug", snapshotId), { signal }),
   sample: () => json<any>("/api/sample/load", { method: "POST" }),
-  diff: (before: string, after: string) =>
+  diff: (before: string, after: string, protocol = "", port = "", signal?: AbortSignal) =>
     json<DiffData>(
-      `/api/diff?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}`,
+      `/api/diff?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}${protocol ? `&protocol=${encodeURIComponent(protocol)}` : ""}${port !== "" ? `&port=${encodeURIComponent(port)}` : ""}`,
+      { signal },
     ),
   topology: (snapshotId = "") => json<TopologyData>(snapshotUrl("/api/topology", snapshotId)),
   reachability: (

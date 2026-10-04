@@ -477,12 +477,15 @@ for (const theme of ["light", "dark"]) {
 test("遅いDiff応答が選択し直したSnapshotの結果を上書きしない", async ({ page }) => {
   const snapshots = ["three", "two", "one"].map(id => ({ id, name: id, created_at: "2026-10-03T00:00:00Z", device_count: 1 }));
   await page.route("**/api/snapshots", route => route.fulfill({ json: snapshots }));
+  let completeSlow!: () => void;
+  const completed = new Promise<void>(resolve => { completeSlow = resolve; });
   let releaseSlow!: () => void;
   const hold = new Promise<void>(resolve => { releaseSlow = resolve; });
   await page.route("**/api/diff?**", async route => {
     const old = new URL(route.request().url()).searchParams.get("before") === "two";
     if (old) await hold;
     await route.fulfill({ json: { summary: { new_allow: old ? 99 : 12, new_deny: 0, changed_rules: 0, added_rules: 0, removed_rules: 0, network_changes: 0 }, communications: [], policies: [], network: [] } });
+    if (old) completeSlow();
   });
   await page.reload();
   const initial = page.waitForRequest(r => r.url().includes("/api/diff?before=two"));
@@ -490,9 +493,9 @@ test("遅いDiff応答が選択し直したSnapshotの結果を上書きしな�
   await initial;
   await page.getByLabel("比較元Snapshot").selectOption("one");
   await expect(page.locator(".diff-summary .risk b")).toHaveText("12");
-  const oldResponse = page.waitForResponse(r => r.url().includes("/api/diff?before=two"));
   releaseSlow();
-  await oldResponse;
+  await completed;
+  await expect(page.locator(".diff-query-scope")).toBeVisible();
   await expect(page.locator(".diff-summary .risk b")).toHaveText("12");
 });
 
@@ -585,5 +588,27 @@ for (const width of [390, 1440]) {
     await expect(dialog.getByRole("alert")).toContainText("delete failed");
     await dialog.getByRole("button", { name: "キャンセル" }).click();
     await expect(page.getByRole("article")).toHaveCount(1);
+  });
+}
+
+for (const width of [390, 1440]) {
+  test(`Diffの通信条件を適用して表示できる ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.route("**/api/snapshots", route => route.fulfill({ json: ["new", "old"].map(id => ({ id, name: id, created_at: "2026-10-04T00:00:00Z", device_count: 1 })) }));
+    await page.route("**/api/diff?**", route => {
+      const q = new URL(route.request().url()).searchParams;
+      return route.fulfill({ json: { evaluation: q.has("protocol") ? "path" : "policy_summary", protocol: q.get("protocol"), port: q.has("port") ? Number(q.get("port")) : null,
+        summary: { new_allow: 0, new_deny: 0, changed_rules: 0, added_rules: 0, removed_rules: 0, network_changes: 0 }, communications: [], policies: [], network: [] } });
+    });
+    await page.reload();
+    await page.getByRole("button", { name: "Snapshot Diff" }).click();
+    if (width < 600) await page.getByRole("button", { name: "メニューを畳む" }).click();
+    if (width === 1440) await page.evaluate(() => document.documentElement.dataset.theme = "dark");
+    await page.getByLabel("比較Protocol").selectOption("tcp");
+    await page.getByLabel("比較Port").fill("443");
+    await page.getByRole("button", { name: "条件を適用" }).click();
+    await expect(page.locator(".diff-query-scope")).toHaveText("経路評価: TCP / 443");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/netpolicy-diff-query-${width}.png`, fullPage: true, animations: "disabled" });
   });
 }

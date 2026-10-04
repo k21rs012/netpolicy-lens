@@ -247,3 +247,10 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 
 .snapshot { min-width:0; max-width:100%; overflow-wrap:anywhere; }
 .snapshot > svg { flex-shrink:0; }
+
+.diff-query { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:20px 0; }
+.diff-query label { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.diff-query input, .diff-query select { padding:8px; max-width:100%; border:1px solid var(--line); border-radius:6px; }
+.diff-query p { flex-basis:100%; color:var(--muted); font-size:12px; line-height:1.7; margin:0; }
+.diff-query-scope { overflow-wrap:anywhere; color:var(--muted); }
+.comm-change details { overflow-wrap:anywhere; font-size:12px; line-height:1.7; }

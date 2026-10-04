@@ -18,6 +18,9 @@ const changeLabel: Record<ObjectDiff["change"], string> = {
 const valueText = (value: any) =>
   Array.isArray(value) ? value.join(", ") : value == null ? "—" : String(value);
 export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
+  const [protocol, setProtocol] = useState("");
+  const [port, setPort] = useState("");
+  const [query, setQuery] = useState({ protocol: "", port: "" });
   const [before, setBefore] = useState("");
   const [after, setAfter] = useState("");
   const [data, setData] = useState<DiffData | null>(null);
@@ -31,6 +34,7 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
   }, [snapshots]);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setData(null);
     setError("");
     if (!before || !after || before === after) {
@@ -38,12 +42,12 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
       return;
     }
     setBusy(true);
-    api.diff(before, after)
+    api.diff(before, after, query.protocol, query.port, controller.signal)
       .then(value => { if (active) setData(value); })
       .catch(cause => { if (active) setError(String(cause)); })
       .finally(() => { if (active) setBusy(false); });
-    return () => { active = false; };
-  }, [before, after]);
+    return () => { active = false; controller.abort(); };
+  }, [before, after, query]);
   if (snapshots.length < 2)
     return (
       <div className="empty diff-empty">
@@ -92,6 +96,16 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
         </div>
         {busy && <RefreshCw className="spin" />}
       </div>
+      <form className="diff-query" onSubmit={event => { event.preventDefault(); setData(null); setQuery({ protocol, port }); }}>
+        <label>Protocol<select aria-label="比較Protocol" value={protocol} onChange={event => setProtocol(event.target.value)}>
+          <option value="">未指定</option>
+          {["tcp", "udp", "sctp", "icmp", "icmpv6", "gre", "esp", "ah", "ospf", "igmp"].map(value => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+        </select></label>
+        <label>Port<input aria-label="比較Port" type="number" min="0" max="65535" step="1" value={port} onChange={event => setPort(event.target.value)} placeholder="未指定" /></label>
+        <button type="submit">条件を適用</button>
+        <p>ProtocolまたはPortを指定すると、Pathと同じ処理で新規通信を評価します。送信元portは未指定、Segment全体が対象です。両方未指定では設定ルールの概要を比較します。Policy・Network変更は条件で絞り込みません。</p>
+      </form>
+      {busy && <p role="status">比較中…</p>}
       {before === after && (
         <div className="diff-note">
           <CircleHelp />
@@ -99,13 +113,14 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
         </div>
       )}
       {error && (
-        <div className="diff-note error">
+        <div className="diff-note error" role="alert">
           <AlertTriangle />
           {error}
         </div>
       )}
       {data && (
         <>
+          <p className="diff-query-scope">{data.evaluation === "path" ? `経路評価: ${(data.protocol || "TCP + UDP + SCTP").toUpperCase()} / ${data.port ?? "ANY"}` : "設定ルールの概要（経路全体の通信保証ではありません）"}</p>
           <div className="diff-summary">
             <article className="risk">
               <span>新しく許可</span>
@@ -214,6 +229,7 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
                       </span>
                     ))}
                   </div>
+                  {data.evaluation === "path" && <details><summary>変更前後の判定根拠</summary><p>変更前: {row.before_reason || "対象なし"}</p><p>変更後: {row.after_reason || "対象なし"}</p></details>}
                   {row.after_traces[0]?.trace && (
                     <code>
                       {row.after_traces[0].trace.source_file}:

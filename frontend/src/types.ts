@@ -120,6 +120,8 @@ export interface Snapshot {
   device_count: number;
 }
 export interface CommunicationDiff {
+  before_reason?: string | null;
+  after_reason?: string | null;
   source: string;
   destination: string;
   source_label: string;
@@ -143,6 +145,9 @@ export interface ObjectDiff {
   fields: { field: string; before: any; after: any }[];
 }
 export interface DiffData {
+  evaluation?: "path" | "policy_summary";
+  protocol?: string | null;
+  port?: number | null;
   before: Snapshot;
   after: Snapshot;
   summary: {

@@ -47,7 +47,7 @@ docker compose down
 | ProtocolまたはPortを指定 | Path traceと同じ経路・Policy・NAT・ECMP評価で再計算 |
 | Portだけ指定 | TCP・UDP・SCTPを個別に評価し、結果が異なる場合はPARTIAL |
 
-条件指定時はSegment全体のアドレス範囲を対象に、新規通信・送信元port未指定で評価します。ポート範囲、`any`、ルール順序、暗黙deny、jump、未解決条件を扱い、単なる文字列検索は行いません。Snapshot Diffの通信差分は、条件未指定の設定概要に基づきます。
+条件指定時はSegment全体のアドレス範囲を対象に、新規通信・送信元port未指定で評価します。ポート範囲、`any`、ルール順序、暗黙deny、jump、未解決条件を扱い、単なる文字列検索は行いません。Snapshot DiffもProtocol・Portを指定すると同じ経路評価で比較します。条件未指定では設定概要に基づきます。
 
 ### 3. Topology / Pathで特定通信を調べる
 
@@ -67,7 +67,7 @@ Topologyの機器間リンクは、config内のサブネット重複から推定
 |---|---|
 | デバイス | Interface、VLAN、Zone、Route、Policy、NAT、Warning、Unsupportedの詳細 |
 | ポリシー | 共通モデルへ変換したルールの一覧と絞り込み |
-| Snapshot Diff | 通信判定・Policy・Interface・VLAN・Zoneの差分。新規ALLOWを優先表示 |
+| Snapshot Diff | Protocol・Port指定による通信判定の差分と変更前後の根拠。Policy・Interface・VLAN・Zoneの差分。新規ALLOWを優先表示 |
 | Parser Debug | 解析モデルと診断情報の確認、マスク済みCanonical JSONのExport |
 | 対応状況 | Parserごとの対応機能 |
 | ヘッダーのテーマ切替 | ライト／ダーク切替。初回はOS設定に追従し、手動選択はブラウザに保存 |
@@ -223,6 +223,12 @@ NETPOLICY_TEST_PYTHON=../.venv/bin/python npm run test:integration
 上のPython指定はBackendディレクトリから解決されます。仮想環境を有効化済みなら `npm run test:integration` のみでも実行できます。統合テストはポート18000 / 15173と一時SQLiteを使い、既存サーバーを再利用しません。Import、再読込、Matrix、Path、再Import、Diff、JSON Export、Snapshot切り替え・名前変更・削除をAPIのモックなしで確認します。
 
 GitHub ActionsではBackendテスト、Frontendビルド・画面E2E・実API統合テスト、Compose起動後のnginx経由ImportとBackend再起動後の保存確認を実行します。`scripts/container_smoke.py` は合成Snapshotを作るため、検証専用環境だけで使用してください。今回の検証内容は [検証記録](docs/verification-2026-10-03.md) にまとめています。
+
+## 通信条件付きSnapshot Diff
+
+Snapshot Diffで比較元・比較先を選び、Protocol・Portを入力して **条件を適用** を押します。入力欄は編集中の条件で、結果の上には適用済み条件を表示します。ProtocolまたはPort指定時は両SnapshotをPathと同じ処理で解析し、NAT・ECMP・経路変更も判定に反映します。Segment全体・新規通信・送信元port未指定が対象です。Portだけ指定するとTCP・UDP・SCTPを評価します。PARTIAL・UNKNOWN・NO_ROUTEは許可や拒否と区別して表示します。
+
+Policy・Networkの設定差分は通信条件で絞り込みません。両条件を空にして適用すると従来の設定概要へ戻ります。条件付き比較は全Segmentの組み合わせを解析するため、大規模構成では時間がかかる場合があります。APIは `GET /api/diff?before={id}&after={id}&protocol=tcp&port=443` です。
 
 ## API
 
