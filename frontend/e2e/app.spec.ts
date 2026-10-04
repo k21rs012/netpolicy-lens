@@ -562,3 +562,28 @@ test("Parser Debugの全config取得は画面を開いたときだけ行う", as
   await debugRequest;
   expect(requests.filter(path => path === "/api/parser/debug")).toHaveLength(1);
 });
+
+for (const width of [390, 1440]) {
+  test(`Snapshot履歴と削除確認は長い名前でも収まる ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const name = "拠点ネットワーク変更前の保存構成".repeat(7);
+    await page.route("**/api/snapshots", route => route.fulfill({ json: [{ id: "snap-1", name, created_at: "2026-10-04T00:00:00Z", parser_version: "1", device_count: 2 }] }));
+    await page.route("**/api/snapshots/snap-1", route => route.fulfill({ status: 500, body: "delete failed" }));
+    await page.reload();
+    if (width < 600 && !await page.locator(".app").evaluate(el => el.classList.contains("sidebar-collapsed")))
+      await page.getByRole("button", { name: "メニューを畳む" }).click();
+    if (width === 1440) await page.evaluate(() => document.documentElement.dataset.theme = "dark");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole("button", { name: "履歴を管理" }).click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole("button", { name: "削除", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText(name);
+    expect(await dialog.evaluate(el => el.getBoundingClientRect().right <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/netpolicy-snapshots-${width}.png`, fullPage: true });
+    await dialog.getByRole("button", { name: "削除を実行" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("delete failed");
+    await dialog.getByRole("button", { name: "キャンセル" }).click();
+    await expect(page.getByRole("article")).toHaveCount(1);
+  });
+}

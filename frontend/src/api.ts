@@ -17,10 +17,11 @@ const json = async <T>(url: string, init?: RequestInit): Promise<T> => {
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   return r.json();
 };
+const snapshotUrl = (url: string, id = "") => id ? `${url}${url.includes("?") ? "&" : "?"}snapshot_id=${encodeURIComponent(id)}` : url;
 export const api = {
-  matrix: (protocol = "", port = "", signal?: AbortSignal) =>
+  matrix: (protocol = "", port = "", signal?: AbortSignal, snapshotId = "") =>
     json<MatrixData>(
-      `/api/matrix?limit=25&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}`, { signal },
+      snapshotUrl(`/api/matrix?limit=25&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}`, snapshotId), { signal },
     ),
   matrixWindow: (data: MatrixData, sources: string[], destinations: string[], signal: AbortSignal) => {
     const query = new URLSearchParams({ limit: "25", protocol: data.protocol || "" });
@@ -30,20 +31,27 @@ export const api = {
     destinations.forEach(id => query.append("destination_ids", id));
     return json<MatrixData>(`/api/matrix?${query}`, { signal });
   },
-  devices: () => json<{ items: Device[] }>("/api/devices"),
-  device: (id: string) => json<DeviceDetail>(`/api/devices/${encodeURIComponent(id)}`),
-  policies: () => json<{ items: Policy[] }>("/api/policies"),
+  devices: (snapshotId = "") => json<{ items: Device[] }>(snapshotUrl("/api/devices", snapshotId)),
+  device: (id: string, snapshotId = "") => json<DeviceDetail>(snapshotUrl(`/api/devices/${encodeURIComponent(id)}`, snapshotId)),
+  policies: (snapshotId = "") => json<{ items: Policy[] }>(snapshotUrl("/api/policies", snapshotId)),
   capabilities: () => json<Capability[]>("/api/parser/capabilities"),
   warnings: (device = "") =>
     json<{ items: ParserWarning[] }>(`/api/parser/warnings?device=${encodeURIComponent(device)}`),
   snapshots: () => json<Snapshot[]>("/api/snapshots"),
-  debug: (signal?: AbortSignal) => json<any>("/api/parser/debug", { signal }),
+  renameSnapshot: (id: string, name: string) => json<Snapshot>(`/api/snapshots/${encodeURIComponent(id)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+  }),
+  deleteSnapshot: async (id: string) => {
+    const response = await fetch(`/api/snapshots/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!response.ok) throw new Error(await response.text());
+  },
+  debug: (signal?: AbortSignal, snapshotId = "") => json<any>(snapshotUrl("/api/parser/debug", snapshotId), { signal }),
   sample: () => json<any>("/api/sample/load", { method: "POST" }),
   diff: (before: string, after: string) =>
     json<DiffData>(
       `/api/diff?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}`,
     ),
-  topology: () => json<TopologyData>("/api/topology"),
+  topology: (snapshotId = "") => json<TopologyData>(snapshotUrl("/api/topology", snapshotId)),
   reachability: (
     src: string,
     dst: string,
@@ -56,9 +64,10 @@ export const api = {
     sourceIp = "",
     destinationIp = "",
     icmpType = "",
+    snapshotId = "",
   ) =>
     json<ReachabilityData>(
-      `/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}${sourcePort ? `&source_port=${encodeURIComponent(sourcePort)}` : ""}${ipVersion ? `&ip_version=${encodeURIComponent(ipVersion)}` : ""}${sourceIp ? `&source_ip=${encodeURIComponent(sourceIp)}` : ""}${destinationIp ? `&destination_ip=${encodeURIComponent(destinationIp)}` : ""}${icmpType !== "" ? `&icmp_type=${encodeURIComponent(icmpType)}` : ""}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`,
+      snapshotUrl(`/api/reachability?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}${sourcePort ? `&source_port=${encodeURIComponent(sourcePort)}` : ""}${ipVersion ? `&ip_version=${encodeURIComponent(ipVersion)}` : ""}${sourceIp ? `&source_ip=${encodeURIComponent(sourceIp)}` : ""}${destinationIp ? `&destination_ip=${encodeURIComponent(destinationIp)}` : ""}${icmpType !== "" ? `&icmp_type=${encodeURIComponent(icmpType)}` : ""}&state=${encodeURIComponent(state)}&assume_session=${assumeSession}`, snapshotId),
     ),
   previewConfigs: (files: File[]) => {
     const form = new FormData();

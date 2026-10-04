@@ -9,7 +9,7 @@ import { PathResults } from "../components/PathResults";
 import type { ReachabilityData, TopologyData, TopologyNode } from "../types";
 
 
-export function TopologyView() {
+export function TopologyView({ snapshotId = "" }: { snapshotId?: string }) {
   const [data, setData] = useState<TopologyData | null>(null);
   const [result, setResult] = useState<ReachabilityData | null>(null);
   const [pathIndex, setPathIndex] = useState(0);
@@ -28,7 +28,7 @@ export function TopologyView() {
   const [error, setError] = useState("");
   useEffect(() => {
     api
-      .topology()
+      .topology(snapshotId)
       .then((value: TopologyData) => {
         setData(value);
         const segments = value.nodes.filter((n) => n.type === "segment");
@@ -47,7 +47,7 @@ export function TopologyView() {
         await api.reachability(
           src, dst, protocol, protocol === "icmp" ? "" : port,
           protocol === "icmp" ? "" : sourcePort, ipVersion, state, assumeSession,
-          sourceIp, destinationIp, protocol === "icmp" ? icmpType : "",
+          sourceIp, destinationIp, protocol === "icmp" ? icmpType : "", snapshotId,
         ),
       );
     } catch (e) {

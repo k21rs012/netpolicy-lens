@@ -28,6 +28,7 @@ import { useAppData } from "./hooks/useAppData";
 import { Devices, DeviceDetailDrawer } from "./pages/Devices";
 import { Capabilities, Debug } from "./pages/Diagnostics";
 import { Policies } from "./pages/Policies";
+import { Snapshots } from "./pages/Snapshots";
 import { SnapshotDiff } from "./pages/SnapshotDiff";
 import { TopologyView } from "./pages/TopologyView";
 import type { Cell, Device } from "./types";
@@ -36,6 +37,7 @@ const nav = [
   ["matrix", "ポリシーマトリクス", LayoutGrid],
   ["topology", "Topology / Path", Route],
   ["diff", "Snapshot Diff", GitCompareArrows],
+  ["snapshots", "Snapshots", Database],
   ["policies", "ポリシー", ShieldCheck],
   ["devices", "デバイス", Server],
   ["debug", "Parser Debug", Braces],
@@ -54,7 +56,7 @@ export default function App() {
   });
   const {
     matrix, devices, policies, capabilities, debug, snapshots, loading,
-    protocol, setProtocol, port, setPort, error, refresh, loadSample, revision, debugLoading,
+    protocol, setProtocol, port, setPort, error, refresh, loadSample, revision, debugLoading, snapshotId, selectSnapshot, snapshotLoading,
   } = useAppData(page);
   const [visibleCells, setVisibleCells] = useState<Cell[]>([]);
   const [selected, setSelected] = useState<Cell | null>(null);
@@ -152,6 +154,14 @@ export default function App() {
             </button>
           </div>
         </header>
+        {!!snapshots.length && <div className="snapshot-selector">
+          <label htmlFor="active-snapshot">解析対象Snapshot</label>
+          <select id="active-snapshot" aria-label="解析対象Snapshot" value={snapshotId}
+            onChange={event => void selectSnapshot(event.target.value)}>
+            {snapshots.map(snapshot => <option key={snapshot.id} value={snapshot.id}>{snapshot.name} · {new Date(snapshot.created_at).toLocaleString()}</option>)}
+          </select>
+          <button onClick={() => setPage("snapshots")}>履歴を管理</button>
+        </div>}
         {error && (
           <div className="diff-note error" role="alert">
             <AlertTriangle />
@@ -213,7 +223,7 @@ export default function App() {
               </label>
               <span className="snapshot">
                 <Clock3 />
-                {matrix.snapshot_id ? "Latest snapshot" : "No snapshot"}
+                {snapshots.find(s => s.id === matrix.snapshot_id)?.name || (matrix.snapshot_id ? "Snapshot" : "No snapshot")}
               </span>
             </div>
             {loading ? (
@@ -228,14 +238,15 @@ export default function App() {
             )}
           </>
         )}
-        {page === "topology" && <TopologyView key={revision} />}
+        {page === "topology" && !snapshotLoading && <TopologyView key={`${revision}:${snapshotId}`} snapshotId={snapshotId} />}
         {page === "diff" && <SnapshotDiff key={`${revision}:${snapshots[0]?.id}`} snapshots={snapshots} />}{" "}
+        {page === "snapshots" && <Snapshots items={snapshots} selected={snapshotId} select={selectSnapshot} refresh={() => refresh()} />}
         {page === "policies" && <Policies items={policies} />}{" "}
         {page === "devices" && (
           <Devices items={devices} onSelect={setSelectedDevice} />
         )}{" "}
         {page === "capabilities" && <Capabilities items={capabilities} />}{" "}
-        {page === "debug" && (debugLoading ? <div className="loading" role="status">解析情報を読み込み中</div> : error ? null : <Debug key={revision} data={debug} />)}
+        {page === "debug" && ((debugLoading || snapshotLoading) ? <div className="loading" role="status">解析情報を読み込み中</div> : error ? null : <Debug key={revision} data={debug} />)}
         <footer className="main-footer">
           <span>
             <Database />
@@ -266,6 +277,7 @@ export default function App() {
           <div className="shade" onClick={() => setSelectedDevice(null)} />
           <DeviceDetailDrawer
             device={selectedDevice}
+            snapshotId={snapshotId}
             close={() => setSelectedDevice(null)}
           />
         </>
@@ -275,7 +287,7 @@ export default function App() {
           close={() => setDialog(false)}
           done={() => {
             setDialog(false);
-            refresh();
+            refresh("");
           }}
         />
       )}

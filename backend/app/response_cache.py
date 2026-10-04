@@ -33,3 +33,9 @@ class ResponseCache:
             while self.bytes > self.max_bytes or len(self.entries) > self.max_entries:
                 _, removed = self.entries.popitem(last=False)
                 self.bytes -= len(removed)
+
+    def discard_store(self, store):
+        with self.lock:
+            for key in list(self.entries):
+                if key[0] is store:
+                    self.bytes -= len(self.entries.pop(key))

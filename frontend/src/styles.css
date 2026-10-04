@@ -225,3 +225,25 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
 .matrix-pagination small { flex-basis: 100%; color: var(--muted); }
 .matrix-page-message { margin: 24px 28px; display: flex; flex-wrap: wrap; gap: 12px; overflow-wrap: anywhere; }
 @media(max-width:600px) { .matrix-pagination, .matrix-page-message { margin-inline: 16px; } }
+
+.snapshot-selector { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; padding:12px 28px; border-bottom:1px solid var(--line); }
+.snapshot-selector label { font-size:12px; color:var(--muted); }
+.snapshot-selector select { flex:1 1 240px; min-width:0; max-width:640px; padding:8px; border:1px solid var(--line); border-radius:6px; }
+.snapshot-manager { margin:24px 28px; }
+.snapshot-manager > label, .snapshot-info label { display:flex; flex-direction:column; gap:8px; font-size:12px; }
+.snapshot-manager input { min-width:0; width:100%; max-width:480px; padding:10px; border:1px solid var(--line); border-radius:6px; }
+.snapshot-manager article { display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; padding:20px; margin-top:12px; border:1px solid var(--line); border-radius:8px; background:var(--surface,#fff); }
+.snapshot-info { flex:1 1 240px; min-width:0; overflow-wrap:anywhere; }
+.snapshot-info h3 { margin:0 0 8px; }
+.snapshot-info h3 small { font-size:11px; color:var(--green); }
+.snapshot-info p, .snapshot-info code { color:var(--muted); font-size:12px; }
+.snapshot-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.snapshot-info .snapshot-actions { margin-top:8px; }
+.snapshot-delete { width:min(480px,calc(100% - 32px)); padding:24px; border:1px solid var(--line); border-radius:10px; background:var(--surface,#fff); color:var(--ink); overflow-wrap:anywhere; }
+.snapshot-delete::backdrop { background:#09130f88; }
+.snapshot-delete p { line-height:1.7; }
+.snapshot-danger { color:var(--red); border-color:var(--red); }
+@media(max-width:600px) { .snapshot-selector { padding-inline:16px; } .snapshot-manager { margin:20px 16px; } }
+
+.snapshot { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+.snapshot > svg { flex-shrink:0; }

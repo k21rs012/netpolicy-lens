@@ -47,10 +47,10 @@ export function Matrix({
   const [result, setResult] = useState("");
   useEffect(() => {
     api
-      .devices()
+      .devices(data.snapshot_id || "")
       .then((value) => setDevices(value.items))
       .catch(() => {});
-  }, []);
+  }, [data.snapshot_id]);
   const deviceById = useMemo(
     () => Object.fromEntries(devices.map((d) => [d.id, d])),
     [devices],

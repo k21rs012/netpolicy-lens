@@ -33,7 +33,9 @@ docker compose down
 3. 必要に応じてSiteを入力し、Importします。
 4. デバイス詳細や **Parser Debug** でWarning・Unsupportedと設定行を確認します。複数ファイルの一部が失敗した場合も、結果を個別に表示します。
 
-1回のImportをSnapshotとして保存します。通常の一覧・解析画面は最新Snapshotを使用し、過去のSnapshotは **Snapshot Diff** や `snapshot_id` を指定したAPIで参照できます。
+1回のImportをSnapshotとして保存します。画面上部の **解析対象Snapshot** で過去の構成に切り替えると、Matrix・Path・機器・Policy・Parser DebugとJSON Exportに反映されます。選択はブラウザに保存され、再読込後も維持されます。新規Import・サンプル作成後は新しいSnapshotを選択します。
+
+**Snapshots** または **履歴を管理** から、名前・IDによる検索、名前変更、削除ができます。名前変更はID・作成日時・保存済みモデルを維持します。削除は確認画面を経て対象の保存configもまとめて削除し、元に戻せません。選択中のSnapshotを削除した場合は残っている最新の構成へ切り替わり、最後の1件を削除すると空の状態になります。Snapshot Diffでは比較する2件を個別に指定できます。
 
 ### 2. ポリシーマトリクスで全体を見る
 
@@ -218,13 +220,13 @@ LinuxでブラウザのOS依存ライブラリも必要な場合は、CIと同�
 NETPOLICY_TEST_PYTHON=../.venv/bin/python npm run test:integration
 ```
 
-上のPython指定はBackendディレクトリから解決されます。仮想環境を有効化済みなら `npm run test:integration` のみでも実行できます。統合テストはポート18000 / 15173と一時SQLiteを使い、既存サーバーを再利用しません。Import、再読込、Matrix、Path、再Import、Diff、JSON ExportをAPIのモックなしで確認します。
+上のPython指定はBackendディレクトリから解決されます。仮想環境を有効化済みなら `npm run test:integration` のみでも実行できます。統合テストはポート18000 / 15173と一時SQLiteを使い、既存サーバーを再利用しません。Import、再読込、Matrix、Path、再Import、Diff、JSON Export、Snapshot切り替え・名前変更・削除をAPIのモックなしで確認します。
 
 GitHub ActionsではBackendテスト、Frontendビルド・画面E2E・実API統合テスト、Compose起動後のnginx経由ImportとBackend再起動後の保存確認を実行します。`scripts/container_smoke.py` は合成Snapshotを作るため、検証専用環境だけで使用してください。今回の検証内容は [検証記録](docs/verification-2026-10-03.md) にまとめています。
 
 ## API
 
-Snapshotに対する読み取りAPIは、`snapshot_id` を省略すると最新Snapshotを使います。実際のIDは一覧APIで取得してください。完全な引数・スキーマは開発用APIの `/docs` で確認できます。
+Snapshotに対する読み取りAPIは、`snapshot_id` を省略すると最新Snapshotを使います。実際のIDは一覧APIで取得してください。存在しない・削除済みのIDを指定すると404を返します。完全な引数・スキーマは開発用APIの `/docs` で確認できます。
 
 | Method | Endpoint | 用途 |
 |---|---|---|
@@ -234,6 +236,8 @@ Snapshotに対する読み取りAPIは、`snapshot_id` を省略すると最新S
 | POST | `/api/configs/preview` | 複数configの検出プレビュー |
 | POST | `/api/configs/import` | config / ZIPのImportとSnapshot作成 |
 | GET | `/api/snapshots` | Snapshot一覧 |
+| PATCH | `/api/snapshots/{id}` | 名前変更（JSON `{"name":"変更前"}`、前後空白を除いた1〜128文字） |
+| DELETE | `/api/snapshots/{id}` | 対象と保存configを削除（204） |
 | GET | `/api/devices`、`/api/devices/{device_id}` | 機器一覧・詳細 |
 | GET | `/api/policies` | 共通Policy一覧 |
 | GET | `/api/matrix`、`/api/matrix/{src}/{dst}` | Matrix・セル根拠 |

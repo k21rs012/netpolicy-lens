@@ -25,25 +25,31 @@ export function useAppData(activePage = "matrix") {
   const matrixRequest = useRef(0);
   const [refreshIndex, setRefreshIndex] = useState(0);
 
-  const refresh = async () => {
+  const [snapshotId, setSnapshotId] = useState(() => {
+    try { return localStorage.getItem("netpolicy-snapshot") || ""; } catch { return ""; }
+  });
+  const refreshRequest = useRef(0);
+  const refresh = async (requestedId = snapshotId) => {
+    const request = ++refreshRequest.current;
     setRefreshIndex(value => value + 1);
     setLoading(true);
-    setError("");
-    setMatrixError("");
+    setMatrix(EMPTY_MATRIX); setDevices([]); setPolicies([]); setDebug([]);
+    setError(""); setMatrixError("");
     try {
-      const [deviceData, policyData, capabilityData, snapshotData] =
-        await Promise.all([
-          api.devices(), api.policies(),
-          api.capabilities(), api.snapshots(),
-        ]);
-      setDevices(deviceData.items);
-      setPolicies(policyData.items);
-      setCapabilities(capabilityData);
-      setSnapshots(snapshotData);
+      const snapshotData = await api.snapshots();
+      if (request !== refreshRequest.current) return;
+      const id = snapshotData.some(s => s.id === requestedId) ? requestedId : snapshotData[0]?.id || "";
+      setSnapshots(snapshotData); setSnapshotId(id);
+      try { if (id) localStorage.setItem("netpolicy-snapshot", id); else localStorage.removeItem("netpolicy-snapshot"); } catch {}
+      const [deviceData, policyData, capabilityData] = await Promise.all([
+        api.devices(id), api.policies(id), api.capabilities(),
+      ]);
+      if (request !== refreshRequest.current) return;
+      setDevices(deviceData.items); setPolicies(policyData.items); setCapabilities(capabilityData);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (request === refreshRequest.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setLoading(false);
+      if (request === refreshRequest.current) setLoading(false);
     }
   };
 
@@ -58,7 +64,7 @@ export function useAppData(activePage = "matrix") {
     setMatrixError("");
     const timer = setTimeout(async () => {
       try {
-        const value = await api.matrix(protocol, port, controller.signal);
+        const value = await api.matrix(protocol, port, controller.signal, snapshotId);
         if (request === matrixRequest.current) setMatrix(value);
       } catch (cause) {
         if (request === matrixRequest.current)
@@ -72,14 +78,14 @@ export function useAppData(activePage = "matrix") {
       clearTimeout(timer);
       if (request === matrixRequest.current) matrixRequest.current++;
     };
-  }, [protocol, port, refreshIndex]);
+  }, [protocol, port, refreshIndex, snapshotId]);
 
   useEffect(() => {
     if (activePage !== "debug") return;
     const controller = new AbortController();
     setDebugLoading(true);
     setDebugError("");
-    api.debug(controller.signal).then(value => {
+    api.debug(controller.signal, snapshotId).then(value => {
       if (!controller.signal.aborted) setDebug(value.items);
     }).catch(cause => {
       if (!controller.signal.aborted) setDebugError(String(cause.message || cause));
@@ -87,16 +93,16 @@ export function useAppData(activePage = "matrix") {
       if (!controller.signal.aborted) setDebugLoading(false);
     });
     return () => controller.abort();
-  }, [activePage, refreshIndex]);
+  }, [activePage, refreshIndex, snapshotId]);
 
   const loadSample = async () => {
     await api.sample();
-    await refresh();
+    await refresh("");
   };
 
   return {
     matrix, devices, policies, capabilities, debug, snapshots, loading: loading || matrixLoading,
     protocol, setProtocol, port, setPort, error: (activePage === "debug" ? debugError : matrixError) || error, refresh, loadSample, debugLoading,
-    revision: refreshIndex,
+    revision: refreshIndex, snapshotId, selectSnapshot: refresh, snapshotLoading: loading,
   };
 }

@@ -20,7 +20,10 @@ class SnapshotStore:
             con.execute("CREATE INDEX IF NOT EXISTS configs_snapshot_file ON configs(snapshot_id, source_file)")
 
     def connect(self):
-        con = sqlite3.connect(self.path); con.row_factory = sqlite3.Row; return con
+        con = sqlite3.connect(self.path)
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys = ON")
+        return con
 
     def create(self, name: str, items: list[tuple[str, str, CanonicalConfig]]) -> str:
         snapshot_id = str(uuid.uuid4())
@@ -50,3 +53,15 @@ class SnapshotStore:
         with self.connect() as con:
             row = con.execute("SELECT id FROM snapshots ORDER BY created_at DESC LIMIT 1").fetchone()
         return row[0] if row else None
+
+    def rename(self, snapshot_id: str, name: str) -> bool:
+        with self.connect() as con:
+            return con.execute("UPDATE snapshots SET name=? WHERE id=?", (name, snapshot_id)).rowcount == 1
+
+    def delete(self, snapshot_id: str) -> bool:
+        with self.connect() as con:
+            if con.execute("SELECT 1 FROM snapshots WHERE id=?", (snapshot_id,)).fetchone() is None:
+                return False
+            con.execute("DELETE FROM configs WHERE snapshot_id=?", (snapshot_id,))
+            con.execute("DELETE FROM snapshots WHERE id=?", (snapshot_id,))
+        return True

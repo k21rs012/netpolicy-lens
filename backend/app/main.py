@@ -5,7 +5,8 @@ import json
 import zipfile
 from datetime import datetime
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, Response
+from pydantic import BaseModel, Field, field_validator
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.encoders import jsonable_encoder
 from .response_cache import ResponseCache
@@ -122,11 +123,42 @@ def load_sample():
 def configs(snapshot_id: str | None):
     resolved = snapshot_id or store.latest_id()
     if not resolved: return [], None
+    if store.get(resolved) is None:
+        raise HTTPException(404, "Snapshot not found")
     return store.load(resolved), resolved
 
 
 @app.get("/api/snapshots")
 def snapshots(): return store.list()
+
+
+class SnapshotRename(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_name(cls, name: str) -> str:
+        if not isinstance(name, str):
+            raise ValueError("Snapshot名は文字列で指定してください")
+        name = name.strip()
+        if not name:
+            raise ValueError("Snapshot名を入力してください")
+        return name
+
+
+@app.patch("/api/snapshots/{snapshot_id}")
+def rename_snapshot(snapshot_id: str, payload: SnapshotRename):
+    if not store.rename(snapshot_id, payload.name):
+        raise HTTPException(404, "Snapshot not found")
+    return store.get(snapshot_id)
+
+
+@app.delete("/api/snapshots/{snapshot_id}", status_code=204)
+def delete_snapshot(snapshot_id: str):
+    if not store.delete(snapshot_id):
+        raise HTTPException(404, "Snapshot not found")
+    matrix_cache.discard_store(store)
+    return Response(status_code=204)
 
 
 @app.get("/api/diff")
@@ -181,6 +213,8 @@ def matrix_data(snapshot_id: str | None, protocol: str | None, port: int | None,
     cache_key = (store, resolved, protocol, port, limit, source, destination,
                  tuple(source_ids) if source_ids is not None else None,
                  tuple(destination_ids) if destination_ids is not None else None)
+    if resolved is not None and store.get(resolved) is None:
+        raise HTTPException(404, "Snapshot not found")
     if windowed and resolved is not None and (cached := matrix_cache.get(cache_key)) is not None:
         return cached
     cfgs, resolved = configs(resolved)

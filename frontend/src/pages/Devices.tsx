@@ -107,15 +107,17 @@ function WarningRows({
 export function DeviceDetailDrawer({
   device,
   close,
+  snapshotId = "",
 }: {
   device: Device;
+  snapshotId?: string;
   close: () => void;
 }) {
   const [data, setData] = useState<DeviceDetail | null>(null);
   const [tab, setTab] = useState("interfaces");
   useEffect(() => {
-    api.device(device.id).then(setData);
-  }, [device.id]);
+    api.device(device.id, snapshotId).then(setData);
+  }, [device.id, snapshotId]);
   const sections = data
     ? {
         interfaces: data.interfaces,
