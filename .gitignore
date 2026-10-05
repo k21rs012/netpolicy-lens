@@ -11,3 +11,4 @@ frontend/blob-report/
 *.tsbuildinfo
 data/
 *.db
+lab/bundles/

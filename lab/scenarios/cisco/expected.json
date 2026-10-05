@@ -1,0 +1,70 @@
+{
+  "name": "cisco",
+  "rationale": "OFFICEのin ACLでHTTPSのみ許可。GUESTは全拒否。変更後はIPv4のHTTPSも拒否。IPv6は変更なし。",
+  "inventory": {
+    "cisco-lab": {
+      "interfaces": 3,
+      "vlans": 3,
+      "nat": 0
+    }
+  },
+  "cases": [
+    {
+      "name": "office-https",
+      "query": {
+        "src": "cisco-lab-vlan-10",
+        "dst": "cisco-lab-vlan-90",
+        "protocol": "tcp",
+        "port": 443,
+        "ip_version": 4
+      },
+      "expected": "ALLOW",
+      "after": "DENY",
+      "matrix_expected": "UNKNOWN",
+      "matrix_after": "UNKNOWN",
+      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+    },
+    {
+      "name": "office-ssh",
+      "query": {
+        "src": "cisco-lab-vlan-10",
+        "dst": "cisco-lab-vlan-90",
+        "protocol": "tcp",
+        "port": 22,
+        "ip_version": 4
+      },
+      "expected": "DENY",
+      "after": "DENY",
+      "matrix_expected": "UNKNOWN",
+      "matrix_after": "UNKNOWN",
+      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+    },
+    {
+      "name": "guest-isolation",
+      "query": {
+        "src": "cisco-lab-vlan-20",
+        "dst": "cisco-lab-vlan-10",
+        "protocol": "tcp",
+        "port": 443,
+        "ip_version": 4
+      },
+      "expected": "DENY",
+      "after": "DENY"
+    },
+    {
+      "name": "ipv6-https",
+      "query": {
+        "src": "cisco-lab-vlan-10",
+        "dst": "cisco-lab-vlan-90",
+        "protocol": "tcp",
+        "port": 443,
+        "ip_version": 6
+      },
+      "expected": "ALLOW",
+      "after": "ALLOW",
+      "matrix_expected": "UNKNOWN",
+      "matrix_after": "UNKNOWN",
+      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+    }
+  ]
+}

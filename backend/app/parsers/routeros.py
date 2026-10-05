@@ -21,7 +21,7 @@ class MikroTikRouterOSParser(BaseConfigParser):
 
     @classmethod
     def detect(cls, config: str) -> float:
-        score = 0.45 if re.search(r"(?m)^# (?:RouterOS|software id =)", config) else 0
+        score = 0.45 if re.search(r"(?m)^# (?:RouterOS|software id =|system id =|[^\n]* by RouterOS\s+\d)", config) else 0
         score += 0.25 if re.search(r"(?m)^/ip firewall (?:filter|nat)", config) else 0
         score += 0.2 if re.search(r"(?m)^/interface (?:vlan|bridge)", config) else 0
         score += 0.1 if re.search(r"(?m)^/system identity", config) else 0
@@ -47,11 +47,13 @@ class MikroTikRouterOSParser(BaseConfigParser):
         for number, raw in enumerate(self.lines, 1):
             stripped = raw.rstrip()
             if pending:
-                pending += " " + stripped.lstrip()
+                # RouterOS can wrap immediately after "=" or within a value.
+                # Preserve the separator before the backslash; do not add one.
+                pending += stripped.lstrip()
             else:
                 pending = stripped; start = number
             if pending.endswith("\\"):
-                pending = pending[:-1].rstrip(); continue
+                pending = pending[:-1]; continue
             logical_lines.append((start, number, pending)); pending = ""
         if pending: logical_lines.append((start, len(self.lines), pending))
         pending_policies: list[tuple[int, int, str, dict[str, str]]] = []

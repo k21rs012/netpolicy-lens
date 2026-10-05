@@ -207,6 +207,10 @@ npm run dev -- --host 127.0.0.1
 
 UIは [http://localhost:5173](http://localhost:5173)、API仕様は [http://localhost:8000/docs](http://localhost:8000/docs) で確認できます。Viteは `/api` をポート8000へ転送します。Backendテストは起動時から専用一時DBに隔離します。Backendの保存先は `DATABASE_PATH` で変更でき、省略時は起動ディレクトリからの `./data/netpolicy.db`（上記手順では `backend/data/netpolicy.db`）です。
 
+### 実configがない場合の検証ラボ
+
+[検証ラボ](lab/README.md) に5ベンダー・7構成の合成config、変更前後の期待値、Import用ZIP生成、API・ブラウザの自動検証を用意しています。RouterOS CHRでは実際のTCP通信・DNATとexport再取り込みを照合しました。dual-stack MatrixのUNKNOWNなど、確認範囲と未対応事項も明記しています。採取済みexportは通常CIでも回帰検証します。
+
 ### テスト
 
 Backendは仮想環境を有効にしたターミナルで、リポジトリのルートから実行します。
@@ -234,7 +238,7 @@ NETPOLICY_TEST_PYTHON=../.venv/bin/python npm run test:integration
 
 上のPython指定はBackendディレクトリから解決されます。仮想環境を有効化済みなら `npm run test:integration` のみでも実行できます。統合テストはポート18000 / 15173と一時SQLiteを使い、既存サーバーを再利用しません。Import、再読込、Matrix、Path、再Import、Diff、JSON Export、Snapshot切り替え・名前変更・削除・バックアップ・復元をAPIのモックなしで確認します。
 
-GitHub ActionsではBackendテスト、Frontendビルド・画面E2E・実API統合テスト、Compose起動後のnginx経由ImportとBackend再起動後の保存確認を実行します。`scripts/container_smoke.py` は合成Snapshotを作るため、検証専用環境だけで使用してください。今回の検証内容は [検証記録](docs/verification-2026-10-03.md) にまとめています。
+GitHub ActionsではBackendテスト、Frontendビルド・画面E2E・実API統合テスト、Compose起動後のnginx経由ImportとBackend再起動後の保存確認を実行します。`scripts/container_smoke.py` は合成Snapshotを作るため、検証専用環境だけで使用してください。基盤の検証は [2026-10-03の記録](docs/verification-2026-10-03.md)、合成configとネイティブRouterOSの検証は [2026-10-05の記録](docs/verification-2026-10-05.md) にまとめています。
 
 ## 通信条件付きSnapshot Diff
 

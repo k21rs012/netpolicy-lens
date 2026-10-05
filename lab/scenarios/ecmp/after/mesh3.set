@@ -1,0 +1,5 @@
+set system host-name mesh3
+set interfaces ethernet eth0 address 198.51.100.2/30
+set interfaces ethernet eth1 address 198.51.100.6/30
+set interfaces ethernet eth2 address 10.44.9.1/24
+set firewall ipv4 forward filter default-action accept

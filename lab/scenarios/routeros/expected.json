@@ -1,0 +1,63 @@
+{
+  "name": "routeros",
+  "rationale": "新規HTTPSのみ許可。8443はserver:443へDNATして同じforwardルールで評価。戻り通信はestablished/relatedで許可。",
+  "inventory": {
+    "routeros-lab": {
+      "interfaces": 3,
+      "nat": 1,
+      "policies": 3
+    }
+  },
+  "cases": [
+    {
+      "name": "office-https",
+      "query": {
+        "src": "routeros-lab-ether1",
+        "dst": "routeros-lab-ether2",
+        "protocol": "tcp",
+        "port": 443
+      },
+      "expected": "ALLOW",
+      "after": "DENY"
+    },
+    {
+      "name": "office-ssh",
+      "query": {
+        "src": "routeros-lab-ether1",
+        "dst": "routeros-lab-ether2",
+        "protocol": "tcp",
+        "port": 22
+      },
+      "expected": "DENY",
+      "after": "DENY"
+    },
+    {
+      "name": "guest-isolation",
+      "query": {
+        "src": "routeros-lab-ether3",
+        "dst": "routeros-lab-ether1",
+        "protocol": "tcp",
+        "port": 443
+      },
+      "expected": "DENY",
+      "after": "DENY"
+    },
+    {
+      "name": "dnat",
+      "query": {
+        "src": "routeros-lab-ether1",
+        "dst": "routeros-lab-ether1",
+        "protocol": "tcp",
+        "port": 8443,
+        "source_ip": "10.44.1.10",
+        "destination_ip": "10.44.1.100"
+      },
+      "expected": "ALLOW",
+      "after": "DENY",
+      "matrix_expected": "PARTIAL",
+      "matrix_after": "DENY",
+      "translated_ip": "10.44.9.20/32",
+      "translated_port": 443
+    }
+  ]
+}

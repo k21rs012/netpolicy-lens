@@ -84,10 +84,6 @@ def policy_applies(
             return False
         if policy.to_zone and not policy.dst_segments and policy.to_zone not in egress_interfaces:
             return False
-    if policy.in_interfaces and not ingress_interfaces.intersection(policy.in_interfaces):
-        return False
-    if policy.out_interfaces and not egress_interfaces.intersection(policy.out_interfaces):
-        return False
     return True
 
 
@@ -127,7 +123,17 @@ def evaluate_chain(
     if key in visited:
         return ChainVerdict(result="UNKNOWN", reason="Policy chain loop")
     visited.add(key)
+    ingress_interfaces = {value for interface in config.interfaces if interface.segment_id == ingress.id
+                          for value in (interface.name, interface.zone) if value}
+    egress_interfaces = {value for interface in config.interfaces if interface.segment_id == egress.id
+                         for value in (interface.name, interface.zone) if value}
     for policy in rules:
+        # Interface match conditions select a rule, not the chain itself. Keep
+        # the chain's default action even when none of its rules match.
+        if policy.in_interfaces and not ingress_interfaces.intersection(policy.in_interfaces):
+            continue
+        if policy.out_interfaces and not egress_interfaces.intersection(policy.out_interfaces):
+            continue
         if policy.states and not ({state.lower(), "any"} & {value.lower() for value in policy.states}):
             continue
         resolved = resolve_policy(config, policy)

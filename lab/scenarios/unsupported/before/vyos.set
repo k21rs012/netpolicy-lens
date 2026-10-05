@@ -1,0 +1,19 @@
+set system host-name vyos-lab
+set interfaces ethernet eth0 address 10.44.1.1/24
+set interfaces ethernet eth0 address 2001:db8:44:1::1/64
+set interfaces ethernet eth1 address 10.44.2.1/24
+set interfaces ethernet eth2 address 10.44.9.1/24
+set interfaces ethernet eth2 address 2001:db8:44:9::1/64
+set firewall ipv4 forward filter default-action drop
+set firewall ipv4 forward filter rule 10 action accept
+set firewall ipv4 forward filter rule 10 inbound-interface name eth0
+set firewall ipv4 forward filter rule 10 destination address 10.44.9.0/24
+set firewall ipv4 forward filter rule 10 protocol tcp
+set firewall ipv4 forward filter rule 10 destination port 443
+set firewall ipv6 forward filter default-action drop
+set firewall ipv6 forward filter rule 10 action accept
+set firewall ipv6 forward filter rule 10 inbound-interface name eth0
+set firewall ipv6 forward filter rule 10 destination address 2001:db8:44:9::/64
+set firewall ipv6 forward filter rule 10 protocol tcp
+set firewall ipv6 forward filter rule 10 destination port 443
+set firewall ipv4 forward filter rule 10 tcp flags syn

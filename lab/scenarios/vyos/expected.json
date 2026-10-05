@@ -1,0 +1,69 @@
+{
+  "name": "vyos",
+  "rationale": "IPv4/IPv6を独立に許可。IPv4のHTTPSだけをdenyへ変更する。",
+  "inventory": {
+    "vyos-lab": {
+      "interfaces": 3,
+      "nat": 0
+    }
+  },
+  "cases": [
+    {
+      "name": "office-https",
+      "query": {
+        "src": "vyos-lab-if-eth0",
+        "dst": "vyos-lab-if-eth2",
+        "protocol": "tcp",
+        "port": 443,
+        "ip_version": 4
+      },
+      "expected": "ALLOW",
+      "after": "DENY",
+      "matrix_expected": "UNKNOWN",
+      "matrix_after": "UNKNOWN",
+      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+    },
+    {
+      "name": "office-ssh",
+      "query": {
+        "src": "vyos-lab-if-eth0",
+        "dst": "vyos-lab-if-eth2",
+        "protocol": "tcp",
+        "port": 22,
+        "ip_version": 4
+      },
+      "expected": "DENY",
+      "after": "DENY",
+      "matrix_expected": "UNKNOWN",
+      "matrix_after": "UNKNOWN",
+      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+    },
+    {
+      "name": "guest-isolation",
+      "query": {
+        "src": "vyos-lab-if-eth1",
+        "dst": "vyos-lab-if-eth0",
+        "protocol": "tcp",
+        "port": 443,
+        "ip_version": 4
+      },
+      "expected": "DENY",
+      "after": "DENY"
+    },
+    {
+      "name": "ipv6-https",
+      "query": {
+        "src": "vyos-lab-if-eth0",
+        "dst": "vyos-lab-if-eth2",
+        "protocol": "tcp",
+        "port": 443,
+        "ip_version": 6
+      },
+      "expected": "ALLOW",
+      "after": "ALLOW",
+      "matrix_expected": "UNKNOWN",
+      "matrix_after": "UNKNOWN",
+      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+    }
+  ]
+}

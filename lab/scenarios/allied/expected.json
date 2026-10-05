@@ -1,0 +1,45 @@
+{
+  "name": "allied",
+  "rationale": "入力VLANにhardware ACLを結び、OFFICEのHTTPSだけ許可する。",
+  "inventory": {
+    "allied-lab": {
+      "vlans": 3,
+      "nat": 0
+    }
+  },
+  "cases": [
+    {
+      "name": "office-https",
+      "query": {
+        "src": "allied-lab-vlan-10",
+        "dst": "allied-lab-vlan-90",
+        "protocol": "tcp",
+        "port": 443
+      },
+      "expected": "ALLOW",
+      "after": "DENY"
+    },
+    {
+      "name": "office-ssh",
+      "query": {
+        "src": "allied-lab-vlan-10",
+        "dst": "allied-lab-vlan-90",
+        "protocol": "tcp",
+        "port": 22
+      },
+      "expected": "DENY",
+      "after": "DENY"
+    },
+    {
+      "name": "guest-isolation",
+      "query": {
+        "src": "allied-lab-vlan-20",
+        "dst": "allied-lab-vlan-10",
+        "protocol": "tcp",
+        "port": 443
+      },
+      "expected": "DENY",
+      "after": "DENY"
+    }
+  ]
+}

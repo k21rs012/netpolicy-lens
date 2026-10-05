@@ -1,0 +1,6 @@
+set system host-name mesh0
+set interfaces ethernet eth0 address 10.44.1.1/24
+set interfaces ethernet eth1 address 192.0.2.1/24
+set firewall ipv4 forward filter default-action accept
+set protocols static route 10.44.9.0/24 next-hop 192.0.2.2
+set protocols static route 10.44.9.0/24 next-hop 192.0.2.3

@@ -11,6 +11,10 @@ from .matrix_query import build_query_matrix
 POLICY_FIELDS = (
     "src", "dst", "src_segments", "dst_segments", "protocol", "src_ports", "dst_ports",
     "action", "direction", "interface", "from_zone", "to_zone", "src_negate", "dst_negate",
+    "ip_version", "in_interfaces", "out_interfaces", "states", "icmp_type",
+    "enabled", "terminal", "chain_id", "order", "default_action", "entrypoint",
+    "jump_target", "default_jump_target", "unsupported_matches", "confidence",
+    "destination_vips", "vip_only", "match_vip",
 )
 INTERFACE_FIELDS = ("description", "addresses", "vlan_id", "trunk_vlans", "zone", "segment_id", "acl_in", "acl_out")
 VLAN_FIELDS = ("name", "subnets", "gateway")
@@ -94,7 +98,7 @@ def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig
 
     before_policies = [p for config in before for p in config.policies]
     after_policies = [p for config in after for p in config.policies]
-    policies = _object_diff(before_policies, after_policies, lambda p: f"{p.device}:{p.name}:{p.sequence}", POLICY_FIELDS, "policy")
+    policies = _object_diff(before_policies, after_policies, lambda p: f"{p.device}:{p.chain_id or p.name}:{p.sequence}", POLICY_FIELDS, "policy")
     interfaces = _object_diff(
         [x for c in before for x in c.interfaces], [x for c in after for x in c.interfaces],
         lambda x: f"{x.device}:{x.name}", INTERFACE_FIELDS, "interface",

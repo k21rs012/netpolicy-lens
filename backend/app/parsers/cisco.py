@@ -56,6 +56,7 @@ class CiscoBaseParser(BaseConfigParser):
         current_vlan: VLAN | None = None
         current_acl: str | None = None
         current_acl_standard = False
+        current_acl_family = 4
         acl_seq = 0
         for number, raw in enumerate(self.lines, 1):
             line = raw.strip()
@@ -70,10 +71,12 @@ class CiscoBaseParser(BaseConfigParser):
                 vlans.append(current_vlan); current_if = None; current_acl = None
                 continue
             if match := re.match(r"ip access-list\s+(standard|extended)\s+(.+)", line):
+                current_acl_family = 4
                 current_acl = match.group(2); current_acl_standard = match.group(1) == "standard"
                 current_if = None; current_vlan = None; acl_seq = 0
                 continue
             if match := re.match(r"ipv6 access-list\s+(.+)", line):
+                current_acl_family = 6
                 current_acl = match.group(1); current_acl_standard = False; current_if = None; current_vlan = None; acl_seq = 0
                 continue
             if not raw.startswith((" ", "\t")):
@@ -100,14 +103,18 @@ class CiscoBaseParser(BaseConfigParser):
                 current_vlan.name = match.group(1); continue
             if current_acl and re.match(r"(?:\d+\s+)?(?:permit|deny)\s+", line):
                 parsed = self._parse_acl_rule(device.id, current_acl, line, number, acl_seq, current_acl_standard)
-                if parsed: policies.append(parsed); acl_seq = parsed.sequence
+                if parsed:
+                    parsed.ip_version = current_acl_family
+                    policies.append(parsed); acl_seq = parsed.sequence
                 else: unsupported.append(ParserWarning(device=device.id, line=number, config=line, reason="unsupported ACL statement", parser=self.parser_id))
                 continue
             if match := re.match(r"access-list\s+(\S+)\s+(.+)", line):
                 acl_name = match.group(1)
                 standard = acl_name.isdigit() and (1 <= int(acl_name) <= 99 or 1300 <= int(acl_name) <= 1999)
                 parsed = self._parse_acl_rule(device.id, acl_name, match.group(2), number, len(policies), standard)
-                if parsed: policies.append(parsed)
+                if parsed:
+                    parsed.ip_version = 4
+                    policies.append(parsed)
                 else: unsupported.append(ParserWarning(device=device.id, line=number, config=line, reason="unsupported ACL statement", parser=self.parser_id))
                 continue
             if re.match(r"ip route(?: vrf \S+)?\s+\S+\s+\S+\s+\S+", line):

@@ -1,0 +1,62 @@
+{
+  "name": "fortios",
+  "rationale": "office HTTPSとwan VIPを明示許可。guest拒否とその他暗黙deny。変更後は明示permitをdenyにする。",
+  "inventory": {
+    "fortios-lab": {
+      "interfaces": 4,
+      "nat": 1,
+      "policies": 3
+    }
+  },
+  "cases": [
+    {
+      "name": "office-https",
+      "query": {
+        "src": "fortios-lab-if-office",
+        "dst": "fortios-lab-if-server",
+        "protocol": "tcp",
+        "port": 443
+      },
+      "expected": "ALLOW",
+      "after": "DENY"
+    },
+    {
+      "name": "office-ssh",
+      "query": {
+        "src": "fortios-lab-if-office",
+        "dst": "fortios-lab-if-server",
+        "protocol": "tcp",
+        "port": 22
+      },
+      "expected": "DENY",
+      "after": "DENY"
+    },
+    {
+      "name": "guest-isolation",
+      "query": {
+        "src": "fortios-lab-if-guest",
+        "dst": "fortios-lab-if-office",
+        "protocol": "tcp",
+        "port": 443
+      },
+      "expected": "DENY",
+      "after": "DENY"
+    },
+    {
+      "name": "vip",
+      "query": {
+        "src": "fortios-lab-if-wan",
+        "dst": "fortios-lab-if-wan",
+        "protocol": "tcp",
+        "port": 8443,
+        "destination_ip": "198.51.100.10"
+      },
+      "expected": "ALLOW",
+      "after": "DENY",
+      "matrix_expected": "PARTIAL",
+      "matrix_after": "DENY",
+      "translated_ip": "10.44.9.20/32",
+      "translated_port": 443
+    }
+  ]
+}

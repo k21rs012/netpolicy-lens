@@ -1,0 +1,26 @@
+{
+  "name": "unsupported",
+  "rationale": "tcp flagsは有効な条件だが解析未対応。確定ALLOWではなくPARTIALにする。条件削除後はALLOW。",
+  "inventory": {
+    "vyos-lab": {
+      "interfaces": 3
+    }
+  },
+  "cases": [
+    {
+      "name": "unsupported-flags",
+      "query": {
+        "src": "vyos-lab-if-eth0",
+        "dst": "vyos-lab-if-eth2",
+        "protocol": "tcp",
+        "port": 443,
+        "ip_version": 4
+      },
+      "expected": "PARTIAL",
+      "after": "ALLOW",
+      "matrix_expected": "UNKNOWN",
+      "matrix_after": "UNKNOWN",
+      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+    }
+  ]
+}

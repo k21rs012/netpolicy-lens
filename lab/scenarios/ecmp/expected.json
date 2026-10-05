@@ -1,0 +1,36 @@
+{
+  "name": "ecmp",
+  "rationale": "2本の同順位経路が合流する。変更後は右側機器が拒否するため経路集合はPARTIAL。実機ECMPのハッシュ比率は対象外。",
+  "inventory": {
+    "mesh0": {
+      "interfaces": 2
+    },
+    "mesh1": {
+      "interfaces": 2
+    },
+    "mesh2": {
+      "interfaces": 2
+    },
+    "mesh3": {
+      "interfaces": 3
+    }
+  },
+  "cases": [
+    {
+      "name": "two-paths",
+      "query": {
+        "src": "mesh0-if-eth0",
+        "dst": "mesh3-if-eth2",
+        "protocol": "tcp",
+        "port": 443
+      },
+      "expected": "ALLOW",
+      "after": "PARTIAL",
+      "path_count": 2,
+      "after_verdicts": [
+        "ALLOW",
+        "DENY"
+      ]
+    }
+  ]
+}

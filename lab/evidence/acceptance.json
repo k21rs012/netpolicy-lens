@@ -1,0 +1,402 @@
+[
+  {
+    "scenario": "allied",
+    "status": "passed",
+    "checks": [
+      {
+        "version": "before",
+        "case": "office-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "ALLOW"
+      },
+      {
+        "version": "before",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "office-https",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      }
+    ]
+  },
+  {
+    "scenario": "cisco",
+    "status": "passed",
+    "checks": [
+      {
+        "version": "before",
+        "case": "office-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "before",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "before",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "ipv6-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "after",
+        "case": "office-https",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "after",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "after",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "ipv6-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "UNKNOWN"
+      }
+    ]
+  },
+  {
+    "scenario": "ecmp",
+    "status": "passed",
+    "checks": [
+      {
+        "version": "before",
+        "case": "two-paths",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "ALLOW"
+      },
+      {
+        "version": "after",
+        "case": "two-paths",
+        "expected": "PARTIAL",
+        "path": "PARTIAL",
+        "matrix": "PARTIAL"
+      }
+    ]
+  },
+  {
+    "scenario": "fortios",
+    "status": "passed",
+    "checks": [
+      {
+        "version": "before",
+        "case": "office-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "ALLOW"
+      },
+      {
+        "version": "before",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "vip",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "PARTIAL"
+      },
+      {
+        "version": "after",
+        "case": "office-https",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "vip",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      }
+    ]
+  },
+  {
+    "scenario": "routeros",
+    "status": "passed",
+    "checks": [
+      {
+        "version": "before",
+        "case": "office-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "ALLOW"
+      },
+      {
+        "version": "before",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "dnat",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "PARTIAL"
+      },
+      {
+        "version": "after",
+        "case": "office-https",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "dnat",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      }
+    ]
+  },
+  {
+    "scenario": "unsupported",
+    "status": "passed",
+    "checks": [
+      {
+        "version": "before",
+        "case": "unsupported-flags",
+        "expected": "PARTIAL",
+        "path": "PARTIAL",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "after",
+        "case": "unsupported-flags",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "UNKNOWN"
+      }
+    ]
+  },
+  {
+    "scenario": "vyos",
+    "status": "passed",
+    "checks": [
+      {
+        "version": "before",
+        "case": "office-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "before",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "before",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "ipv6-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "after",
+        "case": "office-https",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "after",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "UNKNOWN"
+      },
+      {
+        "version": "after",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "ipv6-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "UNKNOWN"
+      }
+    ]
+  },
+  {
+    "scenario": "routeros-export",
+    "status": "passed",
+    "checks": [
+      {
+        "version": "before",
+        "case": "office-https",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "ALLOW"
+      },
+      {
+        "version": "before",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "before",
+        "case": "dnat",
+        "expected": "ALLOW",
+        "path": "ALLOW",
+        "matrix": "PARTIAL"
+      },
+      {
+        "version": "after",
+        "case": "office-https",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "office-ssh",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "guest-isolation",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      },
+      {
+        "version": "after",
+        "case": "dnat",
+        "expected": "DENY",
+        "path": "DENY",
+        "matrix": "DENY"
+      }
+    ],
+    "native_version": "7.23.7 (long-term)",
+    "native_checks": 6
+  }
+]
