@@ -19,13 +19,14 @@ const json = async <T>(url: string, init?: RequestInit): Promise<T> => {
 };
 const snapshotUrl = (url: string, id = "") => id ? `${url}${url.includes("?") ? "&" : "?"}snapshot_id=${encodeURIComponent(id)}` : url;
 export const api = {
-  matrix: (protocol = "", port = "", signal?: AbortSignal, snapshotId = "") =>
+  matrix: (protocol = "", port = "", signal?: AbortSignal, snapshotId = "", ipVersion = "") =>
     json<MatrixData>(
-      snapshotUrl(`/api/matrix?limit=25&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}`, snapshotId), { signal },
+      snapshotUrl(`/api/matrix?limit=25&protocol=${encodeURIComponent(protocol)}${port ? `&port=${encodeURIComponent(port)}` : ""}`, snapshotId) + (ipVersion ? `&ip_version=${ipVersion}` : ""), { signal },
     ),
   matrixWindow: (data: MatrixData, sources: string[], destinations: string[], signal: AbortSignal) => {
     const query = new URLSearchParams({ limit: "25", protocol: data.protocol || "" });
     if (data.snapshot_id) query.set("snapshot_id", data.snapshot_id);
+    if (data.ip_version) query.set("ip_version", String(data.ip_version));
     if (data.port != null) query.set("port", String(data.port));
     sources.forEach(id => query.append("source_ids", id));
     destinations.forEach(id => query.append("destination_ids", id));
@@ -60,9 +61,9 @@ export const api = {
   },
   debug: (signal?: AbortSignal, snapshotId = "") => json<any>(snapshotUrl("/api/parser/debug", snapshotId), { signal }),
   sample: () => json<any>("/api/sample/load", { method: "POST" }),
-  diff: (before: string, after: string, protocol = "", port = "", signal?: AbortSignal) =>
+  diff: (before: string, after: string, protocol = "", port = "", signal?: AbortSignal, ipVersion = "") =>
     json<DiffData>(
-      `/api/diff?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}${protocol ? `&protocol=${encodeURIComponent(protocol)}` : ""}${port !== "" ? `&port=${encodeURIComponent(port)}` : ""}`,
+      `/api/diff?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}${protocol ? `&protocol=${encodeURIComponent(protocol)}` : ""}${port !== "" ? `&port=${encodeURIComponent(port)}` : ""}${ipVersion ? `&ip_version=${ipVersion}` : ""}`,
       { signal },
     ),
   topology: (snapshotId = "") => json<TopologyData>(snapshotUrl("/api/topology", snapshotId)),

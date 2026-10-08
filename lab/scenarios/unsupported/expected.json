@@ -17,10 +17,7 @@
         "ip_version": 4
       },
       "expected": "PARTIAL",
-      "after": "ALLOW",
-      "matrix_expected": "UNKNOWN",
-      "matrix_after": "UNKNOWN",
-      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+      "after": "ALLOW"
     }
   ]
 }

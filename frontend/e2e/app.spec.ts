@@ -227,7 +227,8 @@ test("ダークモードで全ページと詳細・Importを表示する", async
   } }));
   await page.reload();
   await page.getByRole("switch", { name: "ダークモード" }).click();
-  await expect(page.locator(".matrix-tools select")).toHaveCSS("background-repeat", "no-repeat");
+  for (const select of await page.locator(".matrix-tools select").all())
+    await expect(select).toHaveCSS("background-repeat", "no-repeat");
   await expect(page.locator(".matrix-wrap")).toHaveCSS("background-color", "rgb(24, 35, 30)");
   await expect(page.locator(".cell.allow").first()).toHaveCSS("background-color", "rgb(23, 60, 44)");
   await page.screenshot({ path: testInfo.outputPath("dark-matrix.png"), animations: "disabled" });
@@ -629,4 +630,27 @@ test("復元失敗後も再操作でき、ファイル変更で確認内容を�
   await expect(page.getByRole("button", { name: "復元する", exact: true })).toBeEnabled();
   await input.setInputFiles({ name: "two.json", mimeType: "application/json", buffer: Buffer.from("{}") });
   await expect(page.getByRole("button", { name: "復元する", exact: true })).toHaveCount(0);
+});
+
+test('Matrixのページと検索はIP familyを引き継ぐ', async ({ page }) => {
+  const all = Array.from({ length: 26 }, (_, i) => ({ id: `s${i}`, name: `S${i}`, device: 'core', type: 'interface', networks: [`2001:db8:${i}::/64`] }));
+  const requests: URL[] = [];
+  await page.route('**/api/matrix?**', async route => {
+    const url = new URL(route.request().url()); requests.push(url);
+    const src = url.searchParams.getAll('source_ids'), dst = url.searchParams.getAll('destination_ids');
+    const sources = src.length ? src : all.slice(0, 25).map(s => s.id);
+    const destinations = dst.length ? dst : all.slice(0, 25).map(s => s.id);
+    await route.fulfill({ json: { snapshot_id: 'large', ip_version: Number(url.searchParams.get('ip_version')) || null, protocol: 'tcp', port: 443, segments: all,
+      window: { source_ids: sources, destination_ids: destinations, total_cells: 676, complete: false },
+      cells: sources.flatMap(source => destinations.map(destination => ({ source, destination, result: 'ALLOW', allowed: [], denied: [], traces: [], policy_ids: [] }))),
+    } });
+  });
+  await page.getByLabel('Matrix IP family').selectOption('6');
+  await expect(page.locator('.matrix td')).toHaveCount(625);
+  await page.getByRole('button', { name: '送信元の次のページ' }).click();
+  await expect(page.locator('.matrix td')).toHaveCount(25);
+  expect(requests.at(-1)?.searchParams.get('ip_version')).toBe('6');
+  await page.getByLabel('Segmentを検索').fill('S25');
+  await expect(page.locator('.matrix td')).toHaveCount(1);
+  expect(requests.at(-1)?.searchParams.get('ip_version')).toBe('6');
 });

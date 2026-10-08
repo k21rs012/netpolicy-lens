@@ -207,9 +207,10 @@ def restore_snapshot(file: UploadFile = File(...), name: str | None = Form(None,
 
 @app.get("/api/diff")
 def snapshot_diff(before: str | None = None, after: str | None = None,
-                  protocol: str | None = None, port: int | None = Query(None, ge=0, le=65535)):
+                  protocol: str | None = None, port: int | None = Query(None, ge=0, le=65535),
+                  ip_version: int | None = None):
     try:
-        protocol = normalize_query(protocol, port)
+        protocol = normalize_query(protocol, port, ip_version)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     available = store.list()
@@ -223,7 +224,7 @@ def snapshot_diff(before: str | None = None, after: str | None = None,
         raise HTTPException(404, "Snapshot not found")
     if before == after:
         raise HTTPException(422, "異なるSnapshotを選択してください")
-    result = compare_snapshots(store.load(before), store.load(after), protocol, port)
+    result = compare_snapshots(store.load(before), store.load(after), protocol, port, ip_version)
     return {"before": before_meta, "after": after_meta, **result}
 
 
@@ -251,15 +252,15 @@ def policies(snapshot_id: str | None = None, action: str | None = None, protocol
 
 def matrix_data(snapshot_id: str | None, protocol: str | None, port: int | None,
                 source: str | None = None, destination: str | None = None,
-                *, limit: int | None = None, source_ids: list[str] | None = None,
+                *, ip_version: int | None = None, limit: int | None = None, source_ids: list[str] | None = None,
                 destination_ids: list[str] | None = None):
     try:
-        protocol = normalize_query(protocol, port)
+        protocol = normalize_query(protocol, port, ip_version)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     resolved = snapshot_id or store.latest_id()
     windowed = limit is not None or source_ids is not None or destination_ids is not None
-    cache_key = (store, resolved, protocol, port, limit, source, destination,
+    cache_key = (store, resolved, protocol, port, ip_version, limit, source, destination,
                  tuple(source_ids) if source_ids is not None else None,
                  tuple(destination_ids) if destination_ids is not None else None)
     if resolved is not None and store.get(resolved) is None:
@@ -278,11 +279,11 @@ def matrix_data(snapshot_id: str | None, protocol: str | None, port: int | None,
             raise HTTPException(422, "Unknown segment in matrix window")
         source_ids = list(dict.fromkeys(source_ids)) if source_ids is not None else ids[:limit or 25]
         destination_ids = list(dict.fromkeys(destination_ids)) if destination_ids is not None else ids[:limit or 25]
-    conditioned = protocol is not None or port is not None
-    cells = (build_query_matrix(cfgs, protocol, port, source_ids=source_ids, destination_ids=destination_ids) if conditioned
+    conditioned = protocol is not None or port is not None or ip_version is not None
+    cells = (build_query_matrix(cfgs, protocol, port, ip_version=ip_version, source_ids=source_ids, destination_ids=destination_ids) if conditioned
              else build_matrix(cfgs, source_ids, destination_ids))
     result = {"snapshot_id": resolved, "evaluation": "path" if conditioned else "policy_summary",
-              "protocol": protocol, "port": port, "segments": segments, "cells": cells}
+              "protocol": protocol, "port": port, "ip_version": ip_version, "segments": segments, "cells": cells}
     if windowed:
         result["window"] = {"source_ids": source_ids, "destination_ids": destination_ids,
                             "total_cells": len(ids) ** 2, "complete": len(source_ids) == len(ids) and len(destination_ids) == len(ids)}
@@ -296,14 +297,16 @@ def matrix(snapshot_id: str | None = None, protocol: str | None = None,
            port: int | None = Query(None, ge=0, le=65535),
            limit: int | None = Query(None, ge=1, le=50),
            source_ids: list[str] | None = Query(None, max_length=50),
-           destination_ids: list[str] | None = Query(None, max_length=50)):
-    return matrix_data(snapshot_id, protocol, port, limit=limit, source_ids=source_ids, destination_ids=destination_ids)
+           destination_ids: list[str] | None = Query(None, max_length=50),
+           ip_version: int | None = None):
+    return matrix_data(snapshot_id, protocol, port, ip_version=ip_version, limit=limit, source_ids=source_ids, destination_ids=destination_ids)
 
 
 @app.get("/api/matrix/{src}/{dst}")
 def matrix_detail(src: str, dst: str, snapshot_id: str | None = None,
-                  protocol: str | None = None, port: int | None = Query(None, ge=0, le=65535)):
-    data = matrix_data(snapshot_id, protocol, port, src, dst)
+                  protocol: str | None = None, port: int | None = Query(None, ge=0, le=65535),
+                  ip_version: int | None = None):
+    data = matrix_data(snapshot_id, protocol, port, src, dst, ip_version=ip_version)
     if cell := next((x for x in data["cells"] if x.source == src and x.destination == dst), None):
         return cell
     raise HTTPException(404, "Matrix cell not found")

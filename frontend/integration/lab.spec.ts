@@ -43,3 +43,52 @@ for (const scenario of readdirSync(root)) {
     expect(errors).toEqual([]);
   });
 }
+
+test('dual-stack Matrix・Diffは選択したfamilyでPathと一致する', async ({ page }) => {
+  const ids: Record<string, string> = {};
+  for (const version of ['before', 'after']) {
+    const raw = readFileSync(new URL(`cisco/${version}/cisco.conf`, root));
+    const response = await page.request.post('/api/configs/import', { multipart: {
+      files: { name: 'cisco.conf', mimeType: 'text/plain', buffer: raw }, snapshot_name: `family-${version}`,
+    } });
+    expect(response.ok()).toBe(true);
+    ids[version] = (await response.json()).snapshot_id;
+  }
+  await page.goto('/');
+  await page.getByLabel('解析対象Snapshot').selectOption(ids.after);
+  await page.getByLabel('プロトコル', { exact: true }).selectOption('tcp');
+  await page.getByLabel('ポート', { exact: true }).fill('443');
+  const cell = page.locator('button[title="OFFICE (cisco-lab) → SERVER (cisco-lab)"]');
+  await expect(cell).toHaveClass(/unknown/);
+  for (const [family, verdict] of [['4', 'deny'], ['6', 'allow']]) {
+    await page.getByLabel('Matrix IP family').selectOption(family);
+    await expect(cell).toHaveClass(new RegExp(verdict));
+    await expect(page.locator('.matrix-scope')).toContainText(`IPv${family}`);
+    await cell.click();
+    await expect(page.getByRole('dialog', { name: '通信判定の詳細' })).toContainText(`IPv${family} / TCP/443`);
+    await page.getByRole('button', { name: '詳細を閉じる' }).click();
+  }
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await page.getByRole('button', { name: 'メニューを畳む' }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: '/tmp/netpolicy-family-matrix.png', fullPage: true, animations: 'disabled' });
+  await page.getByRole('button', { name: 'メニューを開く' }).click();
+  await page.getByRole('button', { name: 'Snapshot Diff' }).click();
+  await page.getByRole('button', { name: 'メニューを畳む' }).click();
+  await page.getByLabel('比較元Snapshot').selectOption(ids.before);
+  await page.getByLabel('比較先Snapshot').selectOption(ids.after);
+  await page.getByLabel('比較Protocol').selectOption('tcp');
+  await page.getByLabel('比較Port').fill('443');
+  await page.getByLabel('比較IP family').selectOption('4');
+  await page.getByRole('button', { name: '条件を適用' }).click();
+  await expect(page.locator('.diff-query-scope')).toHaveText('経路評価: TCP / 443 / IPv4');
+  const row = page.locator('.comm-change').filter({ hasText: 'OFFICE' }).filter({ hasText: 'SERVER' });
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('DENY TCP/443');
+  await page.getByLabel('比較IP family').selectOption('6');
+  await page.getByRole('button', { name: '条件を適用' }).click();
+  await expect(page.locator('.diff-query-scope')).toHaveText('経路評価: TCP / 443 / IPv6');
+  await expect(row).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: '/tmp/netpolicy-family-diff.png', fullPage: true, animations: 'disabled' });
+});

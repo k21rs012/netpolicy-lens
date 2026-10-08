@@ -18,10 +18,7 @@
         "ip_version": 4
       },
       "expected": "ALLOW",
-      "after": "DENY",
-      "matrix_expected": "UNKNOWN",
-      "matrix_after": "UNKNOWN",
-      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+      "after": "DENY"
     },
     {
       "name": "office-ssh",
@@ -33,10 +30,7 @@
         "ip_version": 4
       },
       "expected": "DENY",
-      "after": "DENY",
-      "matrix_expected": "UNKNOWN",
-      "matrix_after": "UNKNOWN",
-      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+      "after": "DENY"
     },
     {
       "name": "guest-isolation",
@@ -60,10 +54,7 @@
         "ip_version": 6
       },
       "expected": "ALLOW",
-      "after": "ALLOW",
-      "matrix_expected": "UNKNOWN",
-      "matrix_after": "UNKNOWN",
-      "matrix_reason": "Dual-stack source/destination: conditioned Matrix has no family selector; keep UNKNOWN rather than conflate IPv4 and IPv6."
+      "after": "ALLOW"
     }
   ]
 }

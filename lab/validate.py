@@ -61,7 +61,7 @@ def validate_scenario(client, directory: Path):
                 assert path['flow']['current']['destination_addresses'] == [case['translated_ip']]
                 assert path['flow']['current']['destination_port'] == case['translated_port']
             q = case['query']
-            matrix = checked(client.get(f'/api/matrix/{q["src"]}/{q["dst"]}', params={'snapshot_id': snapshot, 'protocol': q['protocol'], 'port': q['port']}))
+            matrix = checked(client.get(f'/api/matrix/{q["src"]}/{q["dst"]}', params={'snapshot_id': snapshot, 'protocol': q['protocol'], 'port': q['port'], **({'ip_version': q['ip_version']} if q.get('ip_version') else {})}))
             matrix_expected = case.get('matrix_expected' if version == 'before' else 'matrix_after', expected)
             assert matrix['result'] == matrix_expected, (directory.name, version, case['name'], 'matrix', matrix['result'], matrix_expected)
             version_paths.append(path)
@@ -79,7 +79,7 @@ def validate_scenario(client, directory: Path):
     assert changed
     for case in changed:
         q = case['query']
-        diff = checked(client.get('/api/diff', params={**saved, 'protocol': q['protocol'], 'port': q['port']}))
+        diff = checked(client.get('/api/diff', params={**saved, 'protocol': q['protocol'], 'port': q['port'], **({'ip_version': q['ip_version']} if q.get('ip_version') else {})}))
         if case.get('matrix_expected', case['expected']) == case.get('matrix_after', case['after']):
             assert diff['policies'], (directory.name, 'missing policy diff', case['name'])
             continue

@@ -19,8 +19,9 @@ const valueText = (value: any) =>
   Array.isArray(value) ? value.join(", ") : value == null ? "—" : String(value);
 export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
   const [protocol, setProtocol] = useState("");
+  const [ipVersion, setIpVersion] = useState("");
   const [port, setPort] = useState("");
-  const [query, setQuery] = useState({ protocol: "", port: "" });
+  const [query, setQuery] = useState({ protocol: "", port: "", ipVersion: "" });
   const [before, setBefore] = useState("");
   const [after, setAfter] = useState("");
   const [data, setData] = useState<DiffData | null>(null);
@@ -42,7 +43,7 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
       return;
     }
     setBusy(true);
-    api.diff(before, after, query.protocol, query.port, controller.signal)
+    api.diff(before, after, query.protocol, query.port, controller.signal, query.ipVersion)
       .then(value => { if (active) setData(value); })
       .catch(cause => { if (active) setError(String(cause)); })
       .finally(() => { if (active) setBusy(false); });
@@ -96,14 +97,17 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
         </div>
         {busy && <RefreshCw className="spin" />}
       </div>
-      <form className="diff-query" onSubmit={event => { event.preventDefault(); setData(null); setQuery({ protocol, port }); }}>
+      <form className="diff-query" onSubmit={event => { event.preventDefault(); setData(null); setQuery({ protocol, port, ipVersion }); }}>
         <label>Protocol<select aria-label="比較Protocol" value={protocol} onChange={event => setProtocol(event.target.value)}>
           <option value="">未指定</option>
           {["tcp", "udp", "sctp", "icmp", "icmpv6", "gre", "esp", "ah", "ospf", "igmp"].map(value => <option key={value} value={value}>{value.toUpperCase()}</option>)}
         </select></label>
         <label>Port<input aria-label="比較Port" type="number" min="0" max="65535" step="1" value={port} onChange={event => setPort(event.target.value)} placeholder="未指定" /></label>
+        <label>IP family<select aria-label="比較IP family" value={ipVersion} onChange={event => setIpVersion(event.target.value)}>
+          <option value="">自動</option><option value="4">IPv4</option><option value="6">IPv6</option>
+        </select></label>
         <button type="submit">条件を適用</button>
-        <p>ProtocolまたはPortを指定すると、Pathと同じ処理で新規通信を評価します。送信元portは未指定、Segment全体が対象です。両方未指定では設定ルールの概要を比較します。Policy・Network変更は条件で絞り込みません。</p>
+        <p>Protocol・Port・IP familyのいずれかを指定すると、Pathと同じ処理で新規通信を評価します。送信元portは未指定、Segment全体が対象です。Protocol未指定時はTCP・UDP・SCTPを評価します。すべて未指定では設定ルールの概要を比較します。Policy・Network変更は条件で絞り込みません。</p>
       </form>
       {busy && <p role="status">比較中…</p>}
       {before === after && (
@@ -120,7 +124,7 @@ export function SnapshotDiff({ snapshots }: { snapshots: Snapshot[] }) {
       )}
       {data && (
         <>
-          <p className="diff-query-scope">{data.evaluation === "path" ? `経路評価: ${(data.protocol || "TCP + UDP + SCTP").toUpperCase()} / ${data.port ?? "ANY"}` : "設定ルールの概要（経路全体の通信保証ではありません）"}</p>
+          <p className="diff-query-scope">{data.evaluation === "path" ? `経路評価: ${(data.protocol || "TCP + UDP + SCTP").toUpperCase()} / ${data.port ?? "ANY"}${data.ip_version ? ` / IPv${data.ip_version}` : ""}` : "設定ルールの概要（経路全体の通信保証ではありません）"}</p>
           <div className="diff-summary">
             <article className="risk">
               <span>新しく許可</span>

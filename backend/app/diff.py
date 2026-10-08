@@ -62,10 +62,10 @@ def _range_signature(cell) -> tuple:
 
 
 def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig],
-                      protocol: str | None = None, port: int | None = None) -> dict[str, Any]:
-    conditioned = protocol is not None or port is not None
+                      protocol: str | None = None, port: int | None = None, ip_version: int | None = None) -> dict[str, Any]:
+    conditioned = protocol is not None or port is not None or ip_version is not None
     def cells(configs):
-        return build_query_matrix(configs, protocol, port) if conditioned else build_matrix(configs)
+        return build_query_matrix(configs, protocol, port, ip_version=ip_version) if conditioned else build_matrix(configs)
     before_segments = {segment.id: segment for config in before for segment in config.segments}
     after_segments = {segment.id: segment for config in after for segment in config.segments}
     all_segments = {**before_segments, **after_segments}
@@ -114,7 +114,7 @@ def compare_snapshots(before: list[CanonicalConfig], after: list[CanonicalConfig
     network = interfaces + vlans + zones
     return {
         "evaluation": "path" if conditioned else "policy_summary",
-        "protocol": protocol, "port": port,
+        "protocol": protocol, "port": port, "ip_version": ip_version,
         "summary": {
             "new_allow": sum(len(x["new_allow"]) for x in communications),
             "new_deny": sum(len(x["new_deny"]) for x in communications),

@@ -56,14 +56,14 @@
         "case": "office-https",
         "expected": "ALLOW",
         "path": "ALLOW",
-        "matrix": "UNKNOWN"
+        "matrix": "ALLOW"
       },
       {
         "version": "before",
         "case": "office-ssh",
         "expected": "DENY",
         "path": "DENY",
-        "matrix": "UNKNOWN"
+        "matrix": "DENY"
       },
       {
         "version": "before",
@@ -77,21 +77,21 @@
         "case": "ipv6-https",
         "expected": "ALLOW",
         "path": "ALLOW",
-        "matrix": "UNKNOWN"
+        "matrix": "ALLOW"
       },
       {
         "version": "after",
         "case": "office-https",
         "expected": "DENY",
         "path": "DENY",
-        "matrix": "UNKNOWN"
+        "matrix": "DENY"
       },
       {
         "version": "after",
         "case": "office-ssh",
         "expected": "DENY",
         "path": "DENY",
-        "matrix": "UNKNOWN"
+        "matrix": "DENY"
       },
       {
         "version": "after",
@@ -105,7 +105,7 @@
         "case": "ipv6-https",
         "expected": "ALLOW",
         "path": "ALLOW",
-        "matrix": "UNKNOWN"
+        "matrix": "ALLOW"
       }
     ]
   },
@@ -262,14 +262,14 @@
         "case": "unsupported-flags",
         "expected": "PARTIAL",
         "path": "PARTIAL",
-        "matrix": "UNKNOWN"
+        "matrix": "PARTIAL"
       },
       {
         "version": "after",
         "case": "unsupported-flags",
         "expected": "ALLOW",
         "path": "ALLOW",
-        "matrix": "UNKNOWN"
+        "matrix": "ALLOW"
       }
     ]
   },
@@ -282,14 +282,14 @@
         "case": "office-https",
         "expected": "ALLOW",
         "path": "ALLOW",
-        "matrix": "UNKNOWN"
+        "matrix": "ALLOW"
       },
       {
         "version": "before",
         "case": "office-ssh",
         "expected": "DENY",
         "path": "DENY",
-        "matrix": "UNKNOWN"
+        "matrix": "DENY"
       },
       {
         "version": "before",
@@ -303,21 +303,21 @@
         "case": "ipv6-https",
         "expected": "ALLOW",
         "path": "ALLOW",
-        "matrix": "UNKNOWN"
+        "matrix": "ALLOW"
       },
       {
         "version": "after",
         "case": "office-https",
         "expected": "DENY",
         "path": "DENY",
-        "matrix": "UNKNOWN"
+        "matrix": "DENY"
       },
       {
         "version": "after",
         "case": "office-ssh",
         "expected": "DENY",
         "path": "DENY",
-        "matrix": "UNKNOWN"
+        "matrix": "DENY"
       },
       {
         "version": "after",
@@ -331,7 +331,7 @@
         "case": "ipv6-https",
         "expected": "ALLOW",
         "path": "ALLOW",
-        "matrix": "UNKNOWN"
+        "matrix": "ALLOW"
       }
     ]
   },

@@ -18,6 +18,7 @@ export function useAppData(activePage = "matrix") {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [protocol, setProtocol] = useState("");
+  const [ipVersion, setIpVersion] = useState("");
   const [port, setPort] = useState("");
   const [error, setError] = useState("");
   const [matrixError, setMatrixError] = useState("");
@@ -64,7 +65,7 @@ export function useAppData(activePage = "matrix") {
     setMatrixError("");
     const timer = setTimeout(async () => {
       try {
-        const value = await api.matrix(protocol, port, controller.signal, snapshotId);
+        const value = await api.matrix(protocol, port, controller.signal, snapshotId, ipVersion);
         if (request === matrixRequest.current) setMatrix(value);
       } catch (cause) {
         if (request === matrixRequest.current)
@@ -78,7 +79,7 @@ export function useAppData(activePage = "matrix") {
       clearTimeout(timer);
       if (request === matrixRequest.current) matrixRequest.current++;
     };
-  }, [protocol, port, refreshIndex, snapshotId]);
+  }, [protocol, port, ipVersion, refreshIndex, snapshotId]);
 
   useEffect(() => {
     if (activePage !== "debug") return;
@@ -102,7 +103,7 @@ export function useAppData(activePage = "matrix") {
 
   return {
     matrix, devices, policies, capabilities, debug, snapshots, loading: loading || matrixLoading,
-    protocol, setProtocol, port, setPort, error: (activePage === "debug" ? debugError : matrixError) || error, refresh, loadSample, debugLoading,
+    protocol, setProtocol, port, setPort, ipVersion, setIpVersion, error: (activePage === "debug" ? debugError : matrixError) || error, refresh, loadSample, debugLoading,
     revision: refreshIndex, snapshotId, selectSnapshot: refresh, snapshotLoading: loading,
   };
 }

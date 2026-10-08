@@ -42,6 +42,7 @@ export interface Cell {
   traces: Trace[];
 }
 export interface MatrixData {
+  ip_version?: 4 | 6 | null;
   protocol?: string | null;
   port?: number | null;
   window?: { source_ids: string[]; destination_ids: string[]; total_cells: number; complete: boolean };
@@ -149,6 +150,7 @@ export interface ObjectDiff {
 }
 export interface DiffData {
   evaluation?: "path" | "policy_summary";
+  ip_version?: 4 | 6 | null;
   protocol?: string | null;
   port?: number | null;
   before: Snapshot;

@@ -156,10 +156,10 @@ export function Matrix({
       <div className="matrix-scope" role="note">
         <CircleHelp aria-hidden="true" />
         <div>
-          <strong>{data.evaluation === "path" ? "通信条件を評価中" : "設定ルールの概要"}</strong>
+          <strong>{data.evaluation === "path" ? `通信条件を評価中${data.ip_version ? ` / IPv${data.ip_version}` : ""}` : "設定ルールの概要"}</strong>
           <p>{data.evaluation === "path"
-            ? "Path traceと同じ経路・Policy・NAT解析です。Segment全体・新規通信として評価します。Portのみ指定した場合はTCP・UDP・SCTPの結果を集約します。"
-            : "表示サービスは経路全体の通信保証ではありません。ProtocolまたはPortを指定すると、Path traceと同じ条件評価に切り替わります。"}</p>
+            ? "Path traceと同じ経路・Policy・NAT解析です。Segment全体・新規通信として評価します。Protocol未指定の場合はTCP・UDP・SCTPの結果を集約します。"
+            : "表示サービスは経路全体の通信保証ではありません。Protocol・Port・IP familyのいずれかを指定すると、Path traceと同じ条件評価に切り替わります。"}</p>
         </div>
       </div>
       <div className="matrix-advanced">

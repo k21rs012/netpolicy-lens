@@ -80,7 +80,7 @@ QEMUのNICをコンテナ内のTCPソケットへ接続し、Scapyで合成端�
 
 ## 判定の範囲と残る制約
 
-- **dual-stackのMatrix**: IPv4/IPv6の両方を持つSegment間では、条件付きMatrixにfamily選択がないためUNKNOWNです。PathはIP familyを指定してそれぞれ検証します。Diffの通信判定も同じ制約を持ちますが、IPv4側ルールの変更自体は検出します。ここをALLOWに読み替えていません。
+- **dual-stackのMatrix・Diff**: IP familyでIPv4／IPv6を指定してPathと同じfamilyを評価できます。Cisco・VyOSの契約テストではIPv4 HTTPSのALLOW→DENYと、IPv6 HTTPSのALLOW維持を確認します。自動で両familyが候補になる場合や、選択familyのアドレスがない場合はUNKNOWNです。Policy・Network変更の一覧はfamilyで絞り込みません。
 - **VIPのMatrixとPath**: 特定IPを指定するPathとSegment全体のMatrixは範囲が違います。VIPの一部だけが許可されるbeforeはMatrixがPARTIAL、すべて拒否されるafterはDENYを期待します。
 - **実通信の対象**: ネイティブ検証はRouterOSのIPv4・単一機器・TCP/状態/NATです。他ベンダーのOS、IPv6実通信、ECMP実通信、実配線・実ハードウェア、本番configの網羅性は未検証です。
 - 合成configは記載ケースの検証用であり、全機能を備えた本番導入用テンプレートではありません。VyOS等の片方向ケースから戻り通信の成功は主張しません。

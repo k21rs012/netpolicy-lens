@@ -10,8 +10,12 @@ PORT_PROTOCOLS = ("tcp", "udp", "sctp")
 SUPPORTED_PROTOCOLS = {*PORT_PROTOCOLS, "icmp", "icmpv6", "gre", "esp", "ah", "ospf", "igmp"}
 
 
-def normalize_query(protocol: str | None, port: int | None) -> str | None:
+def normalize_query(protocol: str | None, port: int | None, ip_version: int | None = None) -> str | None:
     protocol = (protocol or "").strip().lower()
+    if ip_version not in {None, 4, 6}:
+        raise ValueError("ip_version must be 4 or 6")
+    if (protocol == "icmp" and ip_version == 6) or (protocol == "icmpv6" and ip_version == 4):
+        raise ValueError("ICMP protocol and ip_version must use the same family")
     if protocol in {"", "any", "all", "ip", "*"}:
         return None
     if protocol not in SUPPORTED_PROTOCOLS:
@@ -24,11 +28,12 @@ def normalize_query(protocol: str | None, port: int | None) -> str | None:
 def build_query_matrix(
     configs: list[CanonicalConfig], protocol: str | None, port: int | None,
     source: str | None = None, destination: str | None = None,
-    *, source_ids: list[str] | None = None, destination_ids: list[str] | None = None,
+    *, ip_version: int | None = None, source_ids: list[str] | None = None, destination_ids: list[str] | None = None,
 ) -> list[MatrixCell]:
     """Evaluate whole segment ranges, new connections, and unspecified source ports.
 
-    A port-only query covers TCP, UDP and SCTP separately. Mixed outcomes stay
+    Without a protocol, port/family queries cover TCP, UDP and SCTP separately.
+    An explicit family scopes every path evaluation. Mixed outcomes stay
     PARTIAL; no branch can turn an uncertain result into a blanket ALLOW.
     """
     context = AnalysisContext(configs)
@@ -44,7 +49,7 @@ def build_query_matrix(
             ranges = []
             for transport in protocols:
                 label = f"{transport.upper()}/{port}" if port is not None else f"{transport.upper()}/ANY"
-                result = analyze_reachability(configs, src.id, dst.id, transport, port, context=context, include_topology=False)
+                result = analyze_reachability(configs, src.id, dst.id, transport, port, ip_version=ip_version, context=context, include_topology=False)
                 results.append(result["result"])
                 if result["result"] == "ALLOW":
                     allowed.append(label)
@@ -74,7 +79,7 @@ def build_query_matrix(
             verdict = aggregate_verdicts(results)
             cells.append(MatrixCell(
                 source=src.id, destination=dst.id, result=verdict, evaluation="path",
-                query=" + ".join(f"{p.upper()}/{port if port is not None else 'ANY'}" for p in protocols),
+                query=(f"IPv{ip_version} / " if ip_version else "") + " + ".join(f"{p.upper()}/{port if port is not None else 'ANY'}" for p in protocols),
                 reason="; ".join(reasons), allowed=allowed, denied=denied,
                 policy_ids=list(dict.fromkeys(policy_ids)), traces=traces, destination_ranges=ranges,
             ))

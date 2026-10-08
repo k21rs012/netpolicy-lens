@@ -45,6 +45,8 @@ def analyze_reachability(
         (source, flow.current.source_addresses), (destination, flow.current.destination_addresses)
     )):
         return _result(**base, result="UNKNOWN", route_reason="機器自身のIPアドレスをconfigから確認できません")
+    if not flow.current.source_addresses or not flow.current.destination_addresses:
+        return _result(**base, result="UNKNOWN", route_reason="選択したIP familyのアドレスがSourceまたはDestinationにありません")
     # An explicit interface IP is host traffic even when its subnet was selected.
     if destination_ip:
         selected = segment_map[destination]

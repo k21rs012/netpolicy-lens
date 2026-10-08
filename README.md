@@ -55,11 +55,13 @@ docker compose down
 
 | 通信条件 | 評価内容 |
 |---|---|
-| Protocol・Portとも未指定 | 設定ルールの概要。表示サービスは経路全体の通信保証ではありません |
-| ProtocolまたはPortを指定 | Path traceと同じ経路・Policy・NAT・ECMP評価で再計算 |
-| Portだけ指定 | TCP・UDP・SCTPを個別に評価し、結果が異なる場合はPARTIAL |
+| Protocol・Port・IP familyすべて未指定 | 設定ルールの概要。表示サービスは経路全体の通信保証ではありません |
+| Protocol・Port・IP familyのいずれかを指定 | Path traceと同じ経路・Policy・NAT・ECMP評価で再計算 |
+| Protocol未指定でPortまたはIP familyを指定 | TCP・UDP・SCTPを個別に評価し、結果が異なる場合はPARTIAL |
 
-条件指定時はSegment全体のアドレス範囲を対象に、新規通信・送信元port未指定で評価します。ポート範囲、`any`、ルール順序、暗黙deny、jump、未解決条件を扱い、単なる文字列検索は行いません。Snapshot DiffもProtocol・Portを指定すると同じ経路評価で比較します。条件未指定では設定概要に基づきます。
+条件指定時はSegment全体のアドレス範囲を対象に、新規通信・送信元port未指定で評価します。ポート範囲、`any`、ルール順序、暗黙deny、jump、未解決条件を扱い、単なる文字列検索は行いません。Snapshot DiffもProtocol・Port・IP familyのいずれかを指定すると同じ経路評価で比較します。条件未指定では設定概要に基づきます。
+
+Matrix・DiffのIP familyは「自動」（APIでは省略）・IPv4・IPv6を選択できます。自動で両familyが候補になる場合はUNKNOWNを維持します。選択familyのアドレスがないSegmentもUNKNOWNです。Protocol未指定時の経路評価はTCP・UDP・SCTPに限定され、ICMPは別途指定します。IPv4には `icmp`、IPv6には `icmpv6` を指定してください。ページ切り替え・検索・キャッシュにもfamily条件を引き継ぎます。
 
 ### 3. Topology / Pathで特定通信を調べる
 
@@ -209,7 +211,7 @@ UIは [http://localhost:5173](http://localhost:5173)、API仕様は [http://loca
 
 ### 実configがない場合の検証ラボ
 
-[検証ラボ](lab/README.md) に5ベンダー・7構成の合成config、変更前後の期待値、Import用ZIP生成、API・ブラウザの自動検証を用意しています。RouterOS CHRでは実際のTCP通信・DNATとexport再取り込みを照合しました。dual-stack MatrixのUNKNOWNなど、確認範囲と未対応事項も明記しています。採取済みexportは通常CIでも回帰検証します。
+[検証ラボ](lab/README.md) に5ベンダー・7構成の合成config、変更前後の期待値、Import用ZIP生成、API・ブラウザの自動検証を用意しています。RouterOS CHRでは実際のTCP通信・DNATとexport再取り込みを照合しました。Matrix・DiffでもIP familyを選択し、dual-stack構成を検証できます。確認範囲と未対応事項も明記しています。採取済みexportは通常CIでも回帰検証します。
 
 ### テスト
 
@@ -242,9 +244,9 @@ GitHub ActionsではBackendテスト、Frontendビルド・画面E2E・実API統
 
 ## 通信条件付きSnapshot Diff
 
-Snapshot Diffで比較元・比較先を選び、Protocol・Portを入力して **条件を適用** を押します。入力欄は編集中の条件で、結果の上には適用済み条件を表示します。ProtocolまたはPort指定時は両SnapshotをPathと同じ処理で解析し、NAT・ECMP・経路変更も判定に反映します。Segment全体・新規通信・送信元port未指定が対象です。Portだけ指定するとTCP・UDP・SCTPを評価します。PARTIAL・UNKNOWN・NO_ROUTEは許可や拒否と区別して表示します。全体判定がPARTIALのままでも、宛先範囲ごとの判定が変われば通信差分に表示します。「宛先範囲ごとの変更前後」でNAT前の範囲と判定を確認できます。新規許可・拒否の集計はSegment全体で確定したサービスが対象で、部分範囲の件数ではありません。
+Snapshot Diffで比較元・比較先を選び、Protocol・Port・IP familyを選択して **条件を適用** を押します。入力欄は編集中の条件で、結果の上には適用済み条件を表示します。Protocol・Port・IP familyのいずれかを指定した場合は両SnapshotをPathと同じ処理で解析し、NAT・ECMP・経路変更も判定に反映します。Segment全体・新規通信・送信元port未指定が対象です。Protocol未指定でPortまたはIP familyを指定するとTCP・UDP・SCTPを評価します。PARTIAL・UNKNOWN・NO_ROUTEは許可や拒否と区別して表示します。全体判定がPARTIALのままでも、宛先範囲ごとの判定が変われば通信差分に表示します。「宛先範囲ごとの変更前後」でNAT前の範囲と判定を確認できます。新規許可・拒否の集計はSegment全体で確定したサービスが対象で、部分範囲の件数ではありません。
 
-Policy・Networkの設定差分は通信条件で絞り込みません。両条件を空にして適用すると従来の設定概要へ戻ります。条件付き比較は全Segmentの組み合わせを解析するため、大規模構成では時間がかかる場合があります。APIは `GET /api/diff?before={id}&after={id}&protocol=tcp&port=443` です。
+Policy・Networkの設定差分は通信条件で絞り込みません。Protocol・Portを空、IP familyを自動にして適用すると従来の設定概要へ戻ります。条件付き比較は全Segmentの組み合わせを解析するため、大規模構成では時間がかかる場合があります。APIは `GET /api/diff?before={id}&after={id}&protocol=tcp&port=443` です。
 
 ## API
 
@@ -274,6 +276,8 @@ Snapshotに対する読み取りAPIは、`snapshot_id` を省略すると最新S
 | GET | `/api/parser/capabilities` | Parser対応機能 |
 
 Matrixは `/api/matrix?protocol=tcp&port=443` のように条件を指定します。レスポンスの `evaluation` は条件指定時に `path`、未指定時に `policy_summary` です。Portは0〜65535で、ICMPなどportを使わないProtocolとの併用はできません。
+
+Matrix一覧・詳細とDiffのAPIは `ip_version=4` または `ip_version=6` に対応し、省略時は従来動作です。例: `/api/matrix?protocol=tcp&port=443&ip_version=6`。全条件未指定は設定概要、familyのみ指定はTCP・UDP・SCTPの経路評価です。選択familyはMatrix・Diffのレスポンスにも含まれます。
 
 Path解析は `src` / `dst` にSegment IDを指定し、`protocol`、`port`、`source_port`、`ip_version`、`source_ip`、`destination_ip`、`state`、`assume_session`、`icmp_type` を必要に応じて渡します。
 

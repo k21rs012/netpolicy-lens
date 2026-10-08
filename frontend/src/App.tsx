@@ -56,11 +56,11 @@ export default function App() {
   });
   const {
     matrix, devices, policies, capabilities, debug, snapshots, loading,
-    protocol, setProtocol, port, setPort, error, refresh, loadSample, revision, debugLoading, snapshotId, selectSnapshot, snapshotLoading,
+    protocol, setProtocol, port, setPort, ipVersion, setIpVersion, error, refresh, loadSample, revision, debugLoading, snapshotId, selectSnapshot, snapshotLoading,
   } = useAppData(page);
   const [visibleCells, setVisibleCells] = useState<Cell[]>([]);
   const [selected, setSelected] = useState<Cell | null>(null);
-  useEffect(() => setSelected(null), [matrix, protocol, port]);
+  useEffect(() => setSelected(null), [matrix, protocol, port, ipVersion]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   useEffect(() => setSelectedDevice(null), [revision]);
   const [dialog, setDialog] = useState(false);
@@ -202,24 +202,30 @@ export default function App() {
                 <select
                   aria-label="プロトコル"
                   value={protocol}
-                  onChange={(e) => { setProtocol(e.target.value); if (e.target.value === "icmp") setPort(""); }}
+                  onChange={(e) => { setProtocol(e.target.value); if (["icmp", "icmpv6"].includes(e.target.value)) setPort(""); }}
                 >
                   <option value="">ALL</option>
                   <option>tcp</option>
                   <option>udp</option>
                   <option>icmp</option>
+                  <option>icmpv6</option>
                 </select>
               </label>
               <label>
                 Port
                 <input
                   aria-label="ポート"
-                  disabled={protocol === "icmp"}
+                  disabled={["icmp", "icmpv6"].includes(protocol)}
                   inputMode="numeric"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
                   placeholder="any"
                 />
+              </label>
+              <label>IP family
+                <select aria-label="Matrix IP family" value={ipVersion} onChange={e => setIpVersion(e.target.value)}>
+                  <option value="">自動</option><option value="4">IPv4</option><option value="6">IPv6</option>
+                </select>
               </label>
               <span className="snapshot">
                 <Clock3 />
